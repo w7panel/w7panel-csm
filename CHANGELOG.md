@@ -1,5 +1,6 @@
 # Changelog
 
+- Add Makefile targets for Go builds, container images, CRDs, and Helm workflows.
 - Initialize the first Ubuntu operating system template on startup, boot hosts with systemd, and grant access to tenant SSH key ConfigMaps.
 - Add CSM hosts backed by Sysbox and PVCs, system templates, SSH access, and a browser terminal.
 - Add Shell preinstallation, system upgrades, and execution tracking.

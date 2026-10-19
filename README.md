@@ -5,9 +5,18 @@ Container cloud hosts for W7Panel.
 ## Development
 
 ```sh
-go test ./...
-cd ui && npm install && npm run build
+make test
+npm ci --prefix ui && make build-ui
+make build
 ```
+
+`make manifests` refreshes the host and data disk CRDs while preserving the
+cluster-scoped template, preinstall, and upgrade CRDs. Use `make docker-build`
+for the manager/UI image and `make docker-build-system` for the Ubuntu system
+image; override `IMG` and `SYSTEM_IMG` with registry tags before publishing.
+`make helm-lint` and `make helm-template` use a placeholder quote Secret name
+for local checks. For deployment, use `make deployHelm HELM_ARGS='-f values.yaml'`
+with real OIDC, payment, gateway, and image settings.
 
 ## Runtime integration
 
