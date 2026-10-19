@@ -20,6 +20,7 @@ import (
 )
 
 type Authenticator struct {
+	EnsureNamespace       func(context.Context, string) error
 	verifier              *oidc.IDTokenVerifier
 	idVerifier            *oidc.IDTokenVerifier
 	clientID              string
@@ -44,7 +45,7 @@ type cachedRole struct {
 }
 
 // NewAuthenticator pins the issuer and JWKS endpoint from discovery at startup.
-func NewAuthenticator(ctx context.Context, discoveryURL, audience, clientID, redirectURI string) (*Authenticator, error) {
+func NewAuthenticator(ctx context.Context, discoveryURL, audience, clientID, redirectURI, publicAuthorizationURL string) (*Authenticator, error) {
 	u, err := url.Parse(discoveryURL)
 	if err != nil || !trustedOIDCURL(u) || audience == "" {
 		return nil, fmt.Errorf("OIDC discovery URL must use HTTPS or an explicitly configured internal HTTP host, and audience must be set")
@@ -85,11 +86,22 @@ func NewAuthenticator(ctx context.Context, discoveryURL, audience, clientID, red
 	}
 	authURL, authErr := url.Parse(doc.AuthorizationEndpoint)
 	tokenURL, tokenErr := url.Parse(doc.TokenEndpoint)
-	if authErr != nil || tokenErr != nil || authURL.Scheme != "https" || authURL.Host == "" || !trustedOIDCURL(tokenURL) {
+	if authErr != nil || tokenErr != nil || !trustedOIDCURL(authURL) || !trustedOIDCURL(tokenURL) {
 		return nil, fmt.Errorf("OIDC discovery has invalid authorization or token endpoint")
 	}
+	authorizationEndpoint := doc.AuthorizationEndpoint
+	if publicAuthorizationURL != "" {
+		publicURL, err := url.Parse(publicAuthorizationURL)
+		if err != nil || publicURL.Scheme != "https" || publicURL.Host == "" || publicURL.User != nil || publicURL.RawQuery != "" || publicURL.Fragment != "" || publicURL.Path != authURL.Path {
+			return nil, fmt.Errorf("public OIDC authorization URL must be HTTPS and match the discovered path")
+		}
+		authorizationEndpoint = publicAuthorizationURL
+	}
+	if strings.HasPrefix(authorizationEndpoint, "http://") {
+		return nil, fmt.Errorf("browser OIDC authorization URL must use HTTPS")
+	}
 	keys := oidc.NewRemoteKeySet(context.WithValue(context.Background(), oauth2.HTTPClient, client), doc.JWKSURI)
-	return &Authenticator{verifier: oidc.NewVerifier(doc.Issuer, keys, &oidc.Config{ClientID: audience, SupportedSigningAlgs: []string{oidc.RS256}}), idVerifier: oidc.NewVerifier(doc.Issuer, keys, &oidc.Config{ClientID: clientID, SupportedSigningAlgs: []string{oidc.RS256}}), clientID: clientID, redirectURI: redirectURI, authorizationEndpoint: doc.AuthorizationEndpoint, tokenEndpoint: doc.TokenEndpoint, client: client, roles: make(map[[32]byte]cachedRole)}, nil
+	return &Authenticator{verifier: oidc.NewVerifier(doc.Issuer, keys, &oidc.Config{ClientID: audience, SupportedSigningAlgs: []string{oidc.RS256}}), idVerifier: oidc.NewVerifier(doc.Issuer, keys, &oidc.Config{ClientID: clientID, SupportedSigningAlgs: []string{oidc.RS256}}), clientID: clientID, redirectURI: redirectURI, authorizationEndpoint: authorizationEndpoint, tokenEndpoint: doc.TokenEndpoint, client: client, roles: make(map[[32]byte]cachedRole)}, nil
 }
 
 func trustedOIDCURL(u *url.URL) bool {
@@ -119,17 +131,26 @@ func (a *Authenticator) Authenticate(ctx context.Context, token string) (httpapi
 	if err := verified.Claims(&claims); err != nil {
 		return empty, err
 	}
+	if claims.Subject == "" {
+		return empty, fmt.Errorf("OIDC token has invalid user identity")
+	}
+	a.mu.Lock()
+	cached, ok := a.roles[sha256.Sum256([]byte(token))]
+	a.mu.Unlock()
+	if ok && cached.Expires.After(time.Now()) && cached.Subject == claims.Subject {
+		if claims.Username != "" && claims.Username != cached.Username {
+			return empty, fmt.Errorf("OIDC token username differs from verified ID token")
+		}
+		claims.Username = cached.Username
+	}
 	// CSM maps business users to csm-<preferred_username>; never infer it from an opaque subject.
-	if claims.Subject == "" || claims.Username == "" || len(validation.IsDNS1123Label("csm-"+claims.Username)) != 0 {
+	if claims.Username == "" || len(validation.IsDNS1123Label("csm-"+claims.Username)) != 0 {
 		return empty, fmt.Errorf("OIDC token has invalid user identity")
 	}
 	founder := strings.EqualFold(claims.Role, "founder")
 	if claims.IsFounder != nil {
 		founder = *claims.IsFounder
 	} else if claims.Role == "" {
-		a.mu.Lock()
-		cached, ok := a.roles[sha256.Sum256([]byte(token))]
-		a.mu.Unlock()
 		if !ok || !cached.Expires.After(time.Now()) || cached.Subject != claims.Subject || cached.Username != claims.Username {
 			return empty, fmt.Errorf("OIDC token has no verified role claim; log in again")
 		}
@@ -157,7 +178,7 @@ func (a *Authenticator) cacheIDToken(ctx context.Context, accessToken, rawIDToke
 	if err := access.Claims(&accessClaims); err != nil {
 		return err
 	}
-	if idClaims.Subject == "" || idClaims.Subject != accessClaims.Subject || idClaims.Username == "" || idClaims.Username != accessClaims.Username {
+	if idClaims.Subject == "" || idClaims.Subject != accessClaims.Subject || idClaims.Username == "" || (accessClaims.Username != "" && idClaims.Username != accessClaims.Username) {
 		return fmt.Errorf("OIDC ID and access token identities differ")
 	}
 	if idClaims.Role == "" && idClaims.IsFounder == nil {

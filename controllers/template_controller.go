@@ -16,7 +16,7 @@ import (
 type CsmTemplateReconciler struct{ client.Client }
 
 func SetupCsmTemplateController(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).For(&csm.Csm{}).Complete(&CsmTemplateReconciler{Client: mgr.GetClient()})
+	return ctrl.NewControllerManagedBy(mgr).Named("csm-template").For(&csm.Csm{}).Complete(&CsmTemplateReconciler{Client: mgr.GetClient()})
 }
 
 func (r *CsmTemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

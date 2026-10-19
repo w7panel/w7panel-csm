@@ -40,6 +40,8 @@ The manager requires in-cluster Kubernetes credentials and the Helm values for
 Discovery, issuer and JWKS URLs may use HTTP only on an explicitly configured
 cluster Service or loopback host. The browser authorization endpoint and
 redirect URI must use HTTPS.
+When the issuer is a cluster Service, set `oidc.publicAuthorizationURL` to the
+HTTPS authorization endpoint exposed to browsers. Its path must match discovery.
 The quote Secret key defaults to `token`. The quote service must be a trusted
 HTTPS endpoint accepting an authenticated JSON `order.Request` and returning
 `{"amountCents":1234,"params":{"hour":"720","cpu":"2","memory":"4","storage":"40","bandwidth":"5"}}`.

@@ -15,6 +15,10 @@ spec:
         {{- include "w7panel-csm.labels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ include "w7panel-csm.fullname" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: csm
           image: "{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"
@@ -28,6 +32,8 @@ spec:
               value: {{ .Values.oidc.clientID | quote }}
             - name: CSM_OIDC_REDIRECT_URI
               value: {{ .Values.oidc.redirectURI | quote }}
+            - name: CSM_OIDC_PUBLIC_AUTHORIZATION_URL
+              value: {{ .Values.oidc.publicAuthorizationURL | quote }}
             - name: CSM_STORAGE_CLASS
               value: {{ .Values.storage.className | quote }}
             - name: CSM_SYSTEM_IMAGE

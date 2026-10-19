@@ -25,7 +25,11 @@ func TestAuthenticateVerifiesAudienceAndTenant(t *testing.T) {
 	keys := &oidc.StaticKeySet{PublicKeys: []crypto.PublicKey{&key.PublicKey}}
 	a := &Authenticator{verifier: oidc.NewVerifier("https://issuer.example", keys, &oidc.Config{ClientID: "csm-api", SupportedSigningAlgs: []string{oidc.RS256}}), idVerifier: oidc.NewVerifier("https://issuer.example", keys, &oidc.Config{ClientID: "csm-ui", SupportedSigningAlgs: []string{oidc.RS256}}), roles: make(map[[32]byte]cachedRole)}
 	sign := func(audience, subject, role string) string {
-		payload, _ := json.Marshal(map[string]any{"iss": "https://issuer.example", "aud": audience, "exp": time.Now().Add(time.Hour).Unix(), "sub": subject, "preferred_username": "alice", "role": role})
+		claims := map[string]any{"iss": "https://issuer.example", "aud": audience, "exp": time.Now().Add(time.Hour).Unix(), "sub": subject, "role": role}
+		if audience != "csm-api" {
+			claims["preferred_username"] = "alice"
+		}
+		payload, _ := json.Marshal(claims)
 		encoded := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","typ":"JWT"}`)) + "." + base64.RawURLEncoding.EncodeToString(payload)
 		digest := sha256.Sum256([]byte(encoded))
 		signature, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, digest[:])
@@ -62,6 +66,25 @@ func TestTrustedOIDCURL(t *testing.T) {
 		if err != nil || trustedOIDCURL(u) != item.trusted {
 			t.Errorf("trustedOIDCURL(%q) = %v, parse error %v", item.raw, trustedOIDCURL(u), err)
 		}
+	}
+}
+
+func TestAuthenticatorUsesPublicAuthorizationWithInternalIssuer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		base := "http://" + r.Host + "/oidc"
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"issuer": base, "jwks_uri": base + "/jwks",
+			"authorization_endpoint": base + "/authorize", "token_endpoint": base + "/token",
+		})
+	}))
+	defer server.Close()
+	publicURL := "https://auth.example/oidc/authorize"
+	a, err := NewAuthenticator(context.Background(), server.URL+"/oidc/.well-known/openid-configuration", "default", "default", "https://csm.example/callback", publicURL)
+	if err != nil || a.authorizationEndpoint != publicURL {
+		t.Fatalf("authenticator = %+v, %v", a, err)
+	}
+	if _, err := NewAuthenticator(context.Background(), server.URL+"/oidc/.well-known/openid-configuration", "default", "default", "https://csm.example/callback", "https://auth.example/wrong/authorize"); err == nil {
+		t.Fatal("mismatched public authorization path accepted")
 	}
 }
 

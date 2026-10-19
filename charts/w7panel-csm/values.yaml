@@ -1,4 +1,5 @@
 replicaCount: 1
+imagePullSecrets: []
 image:
   repository: docker.cnb.cool/i0358/w7panel-csm
   tag: ""
@@ -12,6 +13,7 @@ ingress:
   className: higress
   host: ""
 oidc:
+  publicAuthorizationURL: ""
   discoveryURL: ""
   audience: default
   clientID: ""

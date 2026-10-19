@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -74,6 +75,7 @@ func (a *Authenticator) refresh(w http.ResponseWriter, r *http.Request) {
 func (a *Authenticator) tokenResponse(w http.ResponseWriter, r *http.Request, token *oauth2.Token, previousRefresh string) {
 	if rawID, ok := token.Extra("id_token").(string); ok {
 		if err := a.cacheIDToken(r.Context(), token.AccessToken, rawID); err != nil {
+			log.Printf("OIDC ID token verification failed: %v", err)
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "OIDC ID token verification failed"})
 			return
 		}
@@ -82,6 +84,13 @@ func (a *Authenticator) tokenResponse(w http.ResponseWriter, r *http.Request, to
 	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "OIDC access token verification failed"})
 		return
+	}
+	if a.EnsureNamespace != nil {
+		if err := a.EnsureNamespace(r.Context(), identity.Namespace); err != nil {
+			log.Printf("CSM tenant namespace creation failed: %v", err)
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "CSM tenant namespace creation failed"})
+			return
+		}
 	}
 	refresh := token.RefreshToken
 	if refresh == "" {

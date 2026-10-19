@@ -19,6 +19,8 @@ import (
 	"github.com/w7panel/w7panel-csm/pkg/order"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/kubernetes"
@@ -139,8 +141,15 @@ func run() error {
 		return err
 	}
 	kubeHTTP := &http.Client{Transport: integration.ServiceAccountTransport(cfg.BearerTokenFile, transport), Timeout: 15 * time.Second}
-	authenticator, err := integration.NewAuthenticator(context.Background(), discovery, audience, oidcClientID, oidcRedirectURI)
+	authenticator, err := integration.NewAuthenticator(context.Background(), discovery, audience, oidcClientID, oidcRedirectURI, os.Getenv("CSM_OIDC_PUBLIC_AUTHORIZATION_URL"))
 	if err != nil {
+		return err
+	}
+	authenticator.EnsureNamespace = func(ctx context.Context, name string) error {
+		_, err := kube.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}, metav1.CreateOptions{})
+		if apierrors.IsAlreadyExists(err) {
+			return nil
+		}
 		return err
 	}
 	scheme := runtime.NewScheme()
