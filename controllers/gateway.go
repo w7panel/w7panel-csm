@@ -16,7 +16,7 @@ import (
 )
 
 var gatewayGVK = schema.GroupVersionKind{Group: "gateway.networking.k8s.io", Version: "v1", Kind: "Gateway"}
-var routeGVK = schema.GroupVersionKind{Group: "gateway.networking.k8s.io", Version: "v1", Kind: "TCPRoute"}
+var routeGVK = schema.GroupVersionKind{Group: "gateway.networking.k8s.io", Version: "v1alpha2", Kind: "TCPRoute"}
 
 func listenerName(host *api.Csm) string {
 	sum := sha256.Sum256([]byte(host.Namespace + "/" + host.Name))

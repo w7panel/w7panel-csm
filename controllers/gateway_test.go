@@ -39,7 +39,7 @@ func TestGatewayPortPreservesListeners(t *testing.T) {
 	if err := c.Get(ctx, types.NamespacedName{Namespace: "tenant", Name: "a"}, route); err != nil {
 		t.Fatal(err)
 	}
-	if route.GetAPIVersion() != "gateway.networking.k8s.io/v1" {
+	if route.GetAPIVersion() != "gateway.networking.k8s.io/v1alpha2" {
 		t.Fatalf("TCPRoute version %s", route.GetAPIVersion())
 	}
 	p, err = r.ensurePort(ctx, b)
