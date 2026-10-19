@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "w7panel-csm.fullname" . }}
+  labels:
+    {{- include "w7panel-csm.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "w7panel-csm.labels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "w7panel-csm.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "w7panel-csm.fullname" . }}
+      containers:
+        - name: csm
+          image: "{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: OIDC_DISCOVERY_URL
+              value: {{ .Values.oidc.discoveryURL | quote }}
+            - name: OIDC_AUDIENCE
+              value: {{ .Values.oidc.audience | quote }}
+            - name: CSM_OIDC_CLIENT_ID
+              value: {{ .Values.oidc.clientID | quote }}
+            - name: CSM_OIDC_REDIRECT_URI
+              value: {{ .Values.oidc.redirectURI | quote }}
+            - name: CSM_STORAGE_CLASS
+              value: {{ .Values.storage.className | quote }}
+            - name: CSM_SYSTEM_IMAGE
+              value: {{ .Values.system.image | quote }}
+            - name: CSM_SSH_GATEWAY_NAMESPACE
+              value: {{ .Values.ssh.gatewayNamespace | quote }}
+            - name: CSM_SSH_GATEWAY_NAME
+              value: {{ .Values.ssh.gatewayName | quote }}
+            - name: CSM_SSH_PUBLIC_HOST
+              value: {{ .Values.ssh.publicHost | quote }}
+            - name: CSM_SSH_PORT_START
+              value: {{ .Values.ssh.portStart | quote }}
+            - name: CSM_SSH_PORT_END
+              value: {{ .Values.ssh.portEnd | quote }}
+            - name: CSM_PAYMENT_PRODUCT_ID
+              value: {{ .Values.payment.productID | quote }}
+            - name: CSM_PAYMENT_CALLBACK_HOST
+              value: {{ .Values.payment.callbackHost | quote }}
+            - name: CSM_PAYMENT_QUOTE_URL
+              value: {{ .Values.payment.quoteURL | quote }}
+            - name: CSM_PAYMENT_CREDENTIAL_SECRET_NAME
+              value: {{ .Values.payment.credentialSecretName | quote }}
+            - name: CSM_PAYMENT_QUOTE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "payment.quoteSecretName is required" .Values.payment.quoteSecretName | quote }}
+                  key: {{ .Values.payment.quoteSecretKey | quote }}
+            - name: CSM_HTTP_ADDR
+              value: {{ printf ":%v" .Values.service.port | quote }}
+            - name: CSM_UI_ROOT
+              value: {{ .Values.ui.root | quote }}
+            - name: CSM_TERMINAL_ALLOWED_ORIGIN
+              value: {{ .Values.terminal.allowedOrigin | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http

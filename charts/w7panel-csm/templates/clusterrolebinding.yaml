@@ -1,0 +1,12 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "w7panel-csm.fullname" . }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "w7panel-csm.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "w7panel-csm.fullname" . }}
+    namespace: {{ .Release.Namespace }}

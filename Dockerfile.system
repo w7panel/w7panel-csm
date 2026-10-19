@@ -1,0 +1,11 @@
+ARG BASE_IMAGE=oowy/systemd:ubuntu-24.04
+FROM ${BASE_IMAGE}
+
+USER root
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends openssh-server \
+    && systemctl enable ssh.service \
+    && rm -rf /var/lib/apt/lists/* /etc/ssh/ssh_host_*
+
+EXPOSE 22
+ENTRYPOINT ["/sbin/init"]

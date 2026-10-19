@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "w7panel-csm.fullname" . }}
+  labels:
+    {{- include "w7panel-csm.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "w7panel-csm.labels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http

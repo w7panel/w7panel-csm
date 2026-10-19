@@ -1,0 +1,6 @@
+apiVersion: v2
+name: w7panel-csm
+description: W7Panel container cloud host controller and API
+type: application
+version: 0.1.0
+appVersion: 0.1.0

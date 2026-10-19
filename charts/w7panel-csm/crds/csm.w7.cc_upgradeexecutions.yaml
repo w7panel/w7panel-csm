@@ -1,0 +1,154 @@
+{
+  "apiVersion": "apiextensions.k8s.io/v1",
+  "kind": "CustomResourceDefinition",
+  "metadata": {
+    "name": "upgradeexecutions.csm.w7.cc"
+  },
+  "spec": {
+    "group": "csm.w7.cc",
+    "scope": "Cluster",
+    "names": {
+      "plural": "upgradeexecutions",
+      "singular": "upgradeexecution",
+      "kind": "UpgradeExecution",
+      "listKind": "UpgradeExecutionList"
+    },
+    "versions": [
+      {
+        "name": "v1alpha1",
+        "served": true,
+        "storage": true,
+        "schema": {
+          "openAPIV3Schema": {
+            "type": "object",
+            "properties": {
+              "apiVersion": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "metadata": {
+                "type": "object",
+                "properties": {}
+              },
+              "spec": {
+                "type": "object",
+                "properties": {
+                  "csmNamespace": {
+                    "type": "string"
+                  },
+                  "csmName": {
+                    "type": "string"
+                  },
+                  "approvedBy": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sourceTemplateName": {
+                    "type": "string"
+                  },
+                  "sourceTemplateHash": {
+                    "type": "string"
+                  },
+                  "targetTemplateName": {
+                    "type": "string"
+                  },
+                  "targetTemplateHash": {
+                    "type": "string"
+                  },
+                  "versionName": {
+                    "type": "string"
+                  },
+                  "steps": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "order": {
+                          "type": "integer",
+                          "format": "int32"
+                        },
+                        "shell": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "order",
+                        "shell"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "csmNamespace",
+                  "csmName",
+                  "approvedBy",
+                  "sourceTemplateName",
+                  "sourceTemplateHash",
+                  "targetTemplateName",
+                  "targetTemplateHash",
+                  "versionName"
+                ],
+                "x-kubernetes-validations": [
+                  {
+                    "rule": "self == oldSelf",
+                    "message": "execution snapshot is immutable"
+                  }
+                ]
+              },
+              "status": {
+                "type": "object",
+                "properties": {
+                  "phase": {
+                    "type": "string",
+                    "enum": [
+                      "running",
+                      "applying",
+                      "succeeded",
+                      "failed"
+                    ]
+                  },
+                  "completed": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "current": {
+                    "type": "string"
+                  },
+                  "log": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "startedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "completedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "appliedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "subresources": {
+          "status": {}
+        }
+      }
+    ]
+  }
+}

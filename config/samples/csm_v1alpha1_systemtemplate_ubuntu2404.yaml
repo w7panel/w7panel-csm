@@ -1,0 +1,10 @@
+apiVersion: csm.w7.cc/v1alpha1
+kind: SystemTemplate
+metadata:
+  name: ubuntu-24.04
+spec:
+  version: "24.04"
+  source: official
+  image: w7panel-csm-system:ubuntu-24.04
+  hash: 225f23574e123ff540de02bcd01cb8f7946c7b0a82094cc607c7be30e4158c2b
+  preinstallApplications: []

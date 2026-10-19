@@ -1,0 +1,37 @@
+replicaCount: 1
+image:
+  repository: docker.cnb.cool/i0358/w7panel-csm
+  tag: ""
+  pullPolicy: IfNotPresent
+service:
+  port: 8082
+ui:
+  root: /app/ui/dist
+ingress:
+  enabled: false
+  className: higress
+  host: ""
+oidc:
+  discoveryURL: ""
+  audience: default
+  clientID: ""
+  redirectURI: ""
+storage:
+  className: ""
+system:
+  image: "w7panel-csm-system:ubuntu-24.04"
+ssh:
+  gatewayNamespace: ""
+  gatewayName: ""
+  publicHost: ""
+  portStart: 30000
+  portEnd: 30999
+terminal:
+  allowedOrigin: ""
+payment:
+  productID: ""
+  callbackHost: ""
+  quoteURL: ""
+  quoteSecretName: ""
+  quoteSecretKey: token
+  credentialSecretName: csm-w7-order
