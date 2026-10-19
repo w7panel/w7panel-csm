@@ -23,8 +23,6 @@ storage:
 system:
   image: "docker.cnb.cool/i0358/w7panel-csm:system-ubuntu-24.04-test-20261019"
 ssh:
-  gatewayNamespace: ""
-  gatewayName: ""
   publicHost: ""
   portStart: 30000
   portEnd: 30999

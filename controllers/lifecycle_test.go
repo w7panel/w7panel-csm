@@ -10,7 +10,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -88,13 +87,10 @@ func TestPaidHostTemplateAndReadyHash(t *testing.T) {
 	_ = api.AddToScheme(s)
 	_ = corev1.AddToScheme(s)
 	_ = appsv1.AddToScheme(s)
-	s.AddKnownTypeWithName(gatewayGVK, &unstructured.Unstructured{})
-	s.AddKnownTypeWithName(routeGVK, &unstructured.Unstructured{})
 	h := &api.Csm{ObjectMeta: metav1.ObjectMeta{Name: "host", Namespace: "tenant", UID: "uid"}, Spec: api.CsmSpec{Paid: true, TemplateName: "ubuntu", SystemDiskGi: 10, SSHPublicKeys: []string{"ssh-ed25519 YWJj test"}}}
 	tpl := &api.SystemTemplate{ObjectMeta: metav1.ObjectMeta{Name: "ubuntu"}, Spec: api.SystemTemplateSpec{Image: "ubuntu:24.04", Hash: "template-hash"}}
-	gw := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "gateway.networking.k8s.io/v1", "kind": "Gateway", "metadata": map[string]any{"name": "shared", "namespace": "network"}, "spec": map[string]any{"listeners": []any{}}}}
-	c := fake.NewClientBuilder().WithScheme(s).WithStatusSubresource(&api.Csm{}, &appsv1.Deployment{}).WithObjects(h, tpl, gw).Build()
-	r := &CsmReconciler{Client: c, Scheme: s, GatewayNamespace: "network", GatewayName: "shared", PortStart: 30000, PortEnd: 30001}
+	c := fake.NewClientBuilder().WithScheme(s).WithStatusSubresource(&api.Csm{}, &appsv1.Deployment{}).WithObjects(h, tpl).Build()
+	r := &CsmReconciler{Client: c, Scheme: s, PortStart: 30000, PortEnd: 30001}
 	ctx := context.Background()
 	key := types.NamespacedName{Namespace: "tenant", Name: "host"}
 	for i := 0; i < 3; i++ {
@@ -115,8 +111,12 @@ func TestPaidHostTemplateAndReadyHash(t *testing.T) {
 	if h.Status.SSHPort != 30000 {
 		t.Fatalf("port %d", h.Status.SSHPort)
 	}
-	if err := c.Get(ctx, key, &corev1.Service{}); err != nil {
+	service := &corev1.Service{}
+	if err := c.Get(ctx, key, service); err != nil {
 		t.Fatal(err)
+	}
+	if service.Spec.Type != corev1.ServiceTypeNodePort || service.Spec.Ports[0].NodePort != 30000 {
+		t.Fatalf("host SSH Service: %#v", service.Spec)
 	}
 	dep.Status.ReadyReplicas = 1
 	dep.Status.ObservedGeneration = dep.Generation

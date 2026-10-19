@@ -15,7 +15,7 @@ cluster-scoped template, preinstall, and upgrade CRDs. Use `make docker-build`
 for the manager/UI image and `make docker-build-system` for the Ubuntu system
 image; override `IMG` and `SYSTEM_IMG` with registry tags before publishing.
 For deployment, use `make deployHelm HELM_ARGS='-f values.yaml'`
-with real OIDC, payment, gateway, and image settings.
+with real OIDC, payment, SSH, and image settings.
 
 ## Runtime integration
 
@@ -34,8 +34,10 @@ Additional Ubuntu, CentOS, or other Linux versions can be added as
 The sample manifest is in `config/samples/`.
 The manager requires in-cluster Kubernetes credentials and the Helm values for
 `oidc.discoveryURL`, `oidc.audience`, `oidc.clientID`, `oidc.redirectURI`,
-`ssh.gatewayNamespace`, `ssh.gatewayName`, `payment.productID`,
+`ssh.publicHost`, `ssh.portStart`, `ssh.portEnd`, `payment.productID`,
 `payment.callbackHost`.
+The SSH port pool must be inside the cluster's NodePort range. CSM creates a
+NodePort Service for each host and publishes SSH at `ssh.publicHost:<assigned port>`.
 Discovery, issuer and JWKS URLs may use HTTP only on an explicitly configured
 cluster Service or loopback host. The browser authorization endpoint and
 redirect URI must use HTTPS.

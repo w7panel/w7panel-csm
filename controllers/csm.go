@@ -23,11 +23,9 @@ import (
 
 type CsmReconciler struct {
 	client.Client
-	Scheme           *runtime.Scheme
-	GatewayNamespace string
-	GatewayName      string
-	PortStart        int32
-	PortEnd          int32
+	Scheme    *runtime.Scheme
+	PortStart int32
+	PortEnd   int32
 }
 
 func (r *CsmReconciler) setOwner(owner *api.Csm, obj client.Object) error {
@@ -63,9 +61,6 @@ func (r *CsmReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}
 	if !host.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(host, api.CsmFinalizer) {
-			if err := r.releasePort(ctx, host); err != nil {
-				return ctrl.Result{}, err
-			}
 			controllerutil.RemoveFinalizer(host, api.CsmFinalizer)
 			return ctrl.Result{}, r.Update(ctx, host)
 		}
@@ -127,9 +122,6 @@ func (r *CsmReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := r.ensureRoute(ctx, host, port); err != nil {
-		return ctrl.Result{}, err
-	}
 	disks := &api.DataDiskList{}
 	if err := r.List(ctx, disks, client.InNamespace(host.Namespace)); err != nil {
 		return ctrl.Result{}, err
@@ -154,7 +146,7 @@ func (r *CsmReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	if err := r.ensureDeployment(ctx, host, dep); err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := r.ensureService(ctx, host, hostruntime.Service(host)); err != nil {
+	if err := r.ensureService(ctx, host, hostruntime.Service(host, port)); err != nil {
 		return ctrl.Result{}, err
 	}
 	actual := &appsv1.Deployment{}
@@ -226,11 +218,6 @@ func (r *CsmReconciler) stopHost(ctx context.Context, h *api.Csm, recycle bool) 
 	} else if !apierrors.IsNotFound(err) {
 		return err
 	}
-	if r.GatewayName != "" {
-		if err := r.releasePort(ctx, h); err != nil {
-			return err
-		}
-	}
 	if recycle {
 		if err := r.Get(ctx, types.NamespacedName{Namespace: h.Namespace, Name: h.Name}, dep); err == nil {
 			return fmt.Errorf("waiting for host Deployment deletion before system PVC recycle")
@@ -293,9 +280,10 @@ func (r *CsmReconciler) ensureService(ctx context.Context, h *api.Csm, desired *
 	if !metav1.IsControlledBy(current, h) {
 		return fmt.Errorf("Service %s is not owned by Csm", h.Name)
 	}
-	if reflect.DeepEqual(current.Spec.Selector, desired.Spec.Selector) && reflect.DeepEqual(current.Spec.Ports, desired.Spec.Ports) {
+	if current.Spec.Type == desired.Spec.Type && reflect.DeepEqual(current.Spec.Selector, desired.Spec.Selector) && reflect.DeepEqual(current.Spec.Ports, desired.Spec.Ports) {
 		return nil
 	}
+	current.Spec.Type = desired.Spec.Type
 	current.Spec.Selector = desired.Spec.Selector
 	current.Spec.Ports = desired.Spec.Ports
 	return r.Update(ctx, current)
