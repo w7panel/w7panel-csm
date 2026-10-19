@@ -34,6 +34,8 @@ func TestKubePricingQuoteAndReset(t *testing.T) {
 		want    int64
 	}{
 		{buy, 700},
+		{Request{Kind: "dataDisk", Action: "buy", Namespace: "csm-alice", Name: "disk", StorageGi: 30, Quantity: 1, Unit: "month"}, 300},
+		{Request{Kind: "csm", Action: "buy", Namespace: "csm-alice", Name: "host", TemplateName: "ubuntu-24.04", CPU: 2, MemoryGi: 4, StorageGi: 20, BandwidthMbps: 5, Quantity: 1, Unit: "year"}, 8400},
 		{Request{Kind: "csm", Action: "renew", Namespace: "csm-alice", Name: "host", Quantity: 1, Unit: "month"}, 700},
 		{Request{Kind: "csm", Action: "expand", Namespace: "csm-alice", Name: "host", CPU: 3, MemoryGi: 4, StorageGi: 20, BandwidthMbps: 5}, 50},
 	} {
