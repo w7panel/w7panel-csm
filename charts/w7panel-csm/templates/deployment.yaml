@@ -52,15 +52,12 @@ spec:
               value: {{ .Values.payment.productID | quote }}
             - name: CSM_PAYMENT_CALLBACK_HOST
               value: {{ .Values.payment.callbackHost | quote }}
-            - name: CSM_PAYMENT_QUOTE_URL
-              value: {{ .Values.payment.quoteURL | quote }}
             - name: CSM_PAYMENT_CREDENTIAL_SECRET_NAME
               value: {{ .Values.payment.credentialSecretName | quote }}
-            - name: CSM_PAYMENT_QUOTE_TOKEN
+            - name: POD_NAMESPACE
               valueFrom:
-                secretKeyRef:
-                  name: {{ required "payment.quoteSecretName is required" .Values.payment.quoteSecretName | quote }}
-                  key: {{ .Values.payment.quoteSecretKey | quote }}
+                fieldRef:
+                  fieldPath: metadata.namespace
             - name: CSM_HTTP_ADDR
               value: {{ printf ":%v" .Values.service.port | quote }}
             - name: CSM_UI_ROOT

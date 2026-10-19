@@ -21,7 +21,7 @@ oidc:
 storage:
   className: ""
 system:
-  image: "w7panel-csm-system:ubuntu-24.04"
+  image: "docker.cnb.cool/i0358/w7panel-csm:system-ubuntu-24.04-test-20261019"
 ssh:
   gatewayNamespace: ""
   gatewayName: ""
@@ -33,7 +33,4 @@ terminal:
 payment:
   productID: ""
   callbackHost: ""
-  quoteURL: ""
-  quoteSecretName: ""
-  quoteSecretKey: token
   credentialSecretName: csm-w7-order

@@ -52,10 +52,10 @@ uninstall:
 	kubectl delete -f $(CHART_DIR)/crds
 
 helm-template:
-	@helm template csm $(CHART_DIR) --include-crds --set payment.quoteSecretName=csm-quote
+	@helm template csm $(CHART_DIR) --include-crds
 
 helm-lint:
-	helm lint $(CHART_DIR) --set payment.quoteSecretName=csm-quote
+	helm lint $(CHART_DIR)
 
 packageHelm:
 	helm package $(CHART_DIR)

@@ -70,11 +70,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	quoteURL, err := required("CSM_PAYMENT_QUOTE_URL")
-	if err != nil {
-		return err
-	}
-	quoteToken, err := required("CSM_PAYMENT_QUOTE_TOKEN")
+	pricingNamespace, err := required("POD_NAMESPACE")
 	if err != nil {
 		return err
 	}
@@ -95,10 +91,6 @@ func run() error {
 	callbackURL, err := url.Parse("https://" + callbackHost)
 	if err != nil || callbackURL.Hostname() == "" || callbackURL.Path != "" || callbackURL.RawQuery != "" || callbackURL.User != nil {
 		return fmt.Errorf("CSM_PAYMENT_CALLBACK_HOST must be a hostname")
-	}
-	parsedQuote, err := url.Parse(quoteURL)
-	if err != nil || parsedQuote.Scheme != "https" || parsedQuote.Host == "" {
-		return fmt.Errorf("CSM_PAYMENT_QUOTE_URL must be HTTPS")
 	}
 	if len(validation.IsDNS1123Label(gatewayNamespace)) != 0 || len(validation.IsDNS1123Label(gatewayName)) != 0 {
 		return fmt.Errorf("SSH Gateway namespace and name must be DNS labels")
@@ -189,8 +181,10 @@ func run() error {
 
 	backend := httpapi.KubeBackend{BaseURL: cfg.Host, Token: cfg.BearerToken, Client: kubeHTTP}
 	store := order.KubeStore{BaseURL: cfg.Host, Token: cfg.BearerToken, Client: kubeHTTP}
-	gateway := order.W7Gateway{NotifyURL: "https://" + callbackHost + httpapi.Prefix + "/order/notify", Credential: integration.SecretCredential(kube, credentialSecretName), Quote: integration.RemoteQuote(quoteURL, quoteToken, productID)}
+	pricing := order.KubePricing{Kube: kube, Store: store, Namespace: pricingNamespace, ProductID: productID}
+	gateway := order.W7Gateway{NotifyURL: "https://" + callbackHost + httpapi.Prefix + "/order/notify", Credential: integration.SecretCredential(kube, credentialSecretName), Quote: pricing.Quote}
 	server := httpapi.NewServer(authenticator.Authenticate, backend, order.Service{Gateway: gateway, Store: store}, uiRoot)
+	server.Pricing = pricing
 	server.KubeURL, server.KubeToken, server.KubeClient = cfg.Host, cfg.BearerToken, kubeHTTP
 	addr := os.Getenv("CSM_HTTP_ADDR")
 	if addr == "" {

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 // Request contains only product choices. The payment gateway calculates the price.
@@ -107,7 +109,7 @@ func Validate(r Request) error {
 		if !validDuration(r.Quantity, r.Unit) {
 			return ErrInvalid
 		}
-		if r.Kind == "csm" && (r.TemplateName == "" || !dnsName(r.TemplateName) || r.CPU < 1 || r.MemoryGi < 1 || r.StorageGi < 1 || r.BandwidthMbps < 1) {
+		if r.Kind == "csm" && (r.TemplateName == "" || len(r.TemplateName) > 63 || len(validation.IsDNS1123Subdomain(r.TemplateName)) != 0 || r.CPU < 1 || r.MemoryGi < 1 || r.StorageGi < 1 || r.BandwidthMbps < 1) {
 			return ErrInvalid
 		}
 		if r.Kind == "dataDisk" && (r.StorageGi < 1 || r.TemplateName != "" || r.CPU != 0 || r.MemoryGi != 0 || r.BandwidthMbps != 0) {

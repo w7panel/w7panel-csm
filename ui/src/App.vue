@@ -7,7 +7,7 @@ const tabs = [
   ['hosts', '主机'], ['purchase', '购买'], ['templates', '系统模板'],
   ['preinstall', '预装'], ['upgrade', '升级'], ['orders', '订单'],
   ['disks', '数据盘'], ['keys', 'SSH 公钥'],
-  ['apps', '初始化配置'], ['versions', '升级版本'], ['policies', '升级策略'],
+  ['apps', '初始化配置'], ['versions', '升级版本'], ['policies', '升级策略'], ['pricing', '费用设置'],
 ]
 const section = ref(location.hash.slice(1) || 'hosts')
 const loading = ref(false)
@@ -24,6 +24,16 @@ const hostKey = ref('')
 const versions = ref([])
 const upgradeTarget = ref('')
 const payment = ref(null)
+const pricingFields = [
+  ['cpuCents', 'CPU', '核'], ['memoryGiCents', '内存', 'GiB'],
+  ['storageGiCents', '存储', 'GiB'], ['bandwidthMbpsCents', '带宽', 'Mbps'],
+]
+const pricing = ref(Object.fromEntries(pricingFields.map(([field]) => [field, ''])))
+const quoteAmountCents = ref(null)
+const quoteError = ref('')
+const quoteLoading = ref(false)
+let quoteTimer
+let quoteSequence = 0
 const draft = ref({ name: '', shell: '', order: 0, versionName: '', templateName: '', version: '', image: '', hash: '' })
 const terminalOpen = ref(false)
 const terminalText = ref('')
@@ -61,12 +71,54 @@ const resource = { hosts: 'csms', templates: 'system-templates', preinstall: 'pr
 
 async function login() { try { await startLogin() } catch (e) { error.value = e.message } }
 function go(id) { section.value = id; location.hash = id; selected.value = null }
+function orderRequest() {
+  const request = { ...form.value }
+  if (request.kind === 'dataDisk') { request.templateName = ''; request.cpu = 0; request.memoryGi = 0; request.bandwidthMbps = 0 }
+  if (request.action === 'renew') { request.templateName = ''; request.cpu = 0; request.memoryGi = 0; request.storageGi = 0; request.bandwidthMbps = 0 }
+  if (request.action === 'expand') { request.templateName = ''; request.quantity = 0; request.unit = '' }
+  return request
+}
+function scheduleQuote() {
+  clearTimeout(quoteTimer)
+  const sequence = ++quoteSequence
+  quoteAmountCents.value = null
+  quoteError.value = ''
+  quoteLoading.value = false
+  if (!loggedIn.value || section.value !== 'purchase' || !form.value.name || (form.value.kind === 'csm' && form.value.action === 'buy' && !form.value.templateName)) return
+  quoteLoading.value = true
+  quoteTimer = setTimeout(async () => {
+    try {
+      const quote = await api('/orders/quote', { method: 'POST', body: JSON.stringify(orderRequest()) })
+      if (sequence === quoteSequence) quoteAmountCents.value = quote.amountCents
+    } catch (e) { if (sequence === quoteSequence) quoteError.value = e.status === 503 ? '尚未设置资源单价，无法报价。' : e.message }
+    finally { if (sequence === quoteSequence) quoteLoading.value = false }
+  }, 350)
+}
+async function savePricing() {
+  const prices = {}
+  for (const [field] of pricingFields) {
+    const value = String(pricing.value[field]).trim()
+    if (!/^\d+(\.\d{1,2})?$/.test(value)) { error.value = '单价须为非负金额，最多两位小数。'; return }
+    prices[field] = Math.round(Number(value) * 100)
+    if (!Number.isSafeInteger(prices[field])) { error.value = '单价超出范围。'; return }
+  }
+  error.value = ''; notice.value = ''
+  try {
+    await api('/pricing', { method: 'PUT', body: JSON.stringify(prices) })
+    notice.value = '资源单价已保存。'
+    await load()
+  } catch (e) { error.value = e.message }
+}
 async function load() {
   if (!loggedIn.value) return
   error.value = ''; loading.value = true
   try {
-    rows.value = section.value === 'purchase' ? [] : items(await api('/' + (resource[section.value] || 'csms')))
-    if (section.value === 'purchase') templates.value = items(await api('/system-templates'))
+    rows.value = section.value === 'purchase' || section.value === 'pricing' ? [] : items(await api('/' + (resource[section.value] || 'csms')))
+    if (section.value === 'purchase') { templates.value = items(await api('/system-templates')); scheduleQuote() }
+    if (section.value === 'pricing') {
+      const saved = await api('/pricing').catch(e => { if (e.status === 404) return null; throw e })
+      pricing.value = Object.fromEntries(pricingFields.map(([field]) => [field, saved ? (saved[field] / 100).toFixed(2) : '']))
+    }
     if (section.value === 'hosts') versions.value = items(await api('/upgrade-versions'))
   } catch (e) { error.value = e.message; rows.value = []; if (e.status === 401) loggedIn.value = false }
   finally { loading.value = false }
@@ -92,11 +144,7 @@ async function remove(path) {
   catch (e) { error.value = e.message }
 }
 async function buy() {
-  const request = { ...form.value }
-  if (request.kind === 'dataDisk') { request.templateName = ''; request.cpu = 0; request.memoryGi = 0; request.bandwidthMbps = 0 }
-  if (request.action === 'renew') { request.templateName = ''; request.cpu = 0; request.memoryGi = 0; request.storageGi = 0; request.bandwidthMbps = 0 }
-  if (request.action === 'expand') { request.templateName = ''; request.quantity = 0; request.unit = '' }
-  await run('/orders', request)
+  await run('/orders', orderRequest())
 }
 async function createConfig() {
   const kind = resource[section.value]
@@ -108,6 +156,7 @@ async function createConfig() {
 function nameOf(row) { return row.metadata?.name || row.name || row.orderSn || '—' }
 function phaseOf(row) { return row.status?.phase || row.status || row.spec?.order?.status || '—' }
 watch(section, load)
+watch(form, scheduleQuote, { deep: true })
 onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; if (loggedIn.value) await load() } catch (e) { error.value = e.message } })
 </script>
 
@@ -136,7 +185,12 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; if
             <label v-if="form.kind === 'csm'">带宽 Mbps<input v-model.number="form.bandwidthMbps" type="number" min="1" /></label>
           </template>
           <template v-if="form.action !== 'expand'"><label>时长<input v-model.number="form.quantity" type="number" min="1" /></label><label>单位<select v-model="form.unit"><option value="month">月</option><option value="year">年</option></select></label></template>
-        </div><button class="primary" @click="buy">创建订单</button>
+        </div><p v-if="quoteLoading" class="hint" role="status">正在报价…</p><p v-else-if="quoteError" class="alert" role="alert">{{ quoteError }}</p><p v-else-if="quoteAmountCents !== null" class="quote" role="status">预估费用 <strong>¥{{ (quoteAmountCents / 100).toFixed(2) }}</strong></p><button class="primary" :disabled="quoteAmountCents === null || quoteLoading" @click="buy">创建订单</button>
+      </section>
+      <section v-else-if="section === 'pricing'" class="panel form-panel">
+        <p class="hint">设置各项资源的月单价；购买页按实际资源和时长向服务端获取报价。只有创始人可保存。</p>
+        <div class="grid"><label v-for="[field, label, unit] in pricingFields" :key="field">{{ label }}（元 / {{ unit }} / 月）<input v-model.trim="pricing[field]" type="number" min="0" step="0.01" required placeholder="0.00" /></label></div>
+        <button class="primary" @click="savePricing">保存单价</button>
       </section>
       <section v-else-if="['apps','versions','policies'].includes(section)" class="panel form-panel">
         <h2>新增{{ title }}</h2><div class="grid">
@@ -152,7 +206,7 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; if
       <section v-else-if="section === 'keys'" class="panel">
         <form class="key-form" @submit.prevent="run('/ssh-keys', key)"><label>名称<input v-model.trim="key.name" required /></label><label>SSH 公钥<textarea v-model.trim="key.publicKey" required placeholder="ssh-ed25519 ..." /></label><button class="primary">添加公钥</button></form>
       </section>
-      <section v-if="section !== 'purchase'" class="panel">
+      <section v-if="section !== 'purchase' && section !== 'pricing'" class="panel">
         <div class="panel-head"><span>{{ loading ? '正在加载…' : `${rows.length} 条记录` }}</span><button v-if="section === 'hosts' || section === 'disks'" class="text" @click="go('purchase')">购买资源 →</button></div>
         <div v-if="!loading && rows.length === 0" class="empty">暂无记录。{{ section === 'hosts' ? '可从购买页面创建第一台主机。' : '' }}</div>
         <div v-else class="table-wrap"><table><thead><tr><th>名称 / 订单号</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td class="mono">{{ nameOf(row) }}</td><td><span class="status">{{ phaseOf(row) }}</span></td><td class="actions">
@@ -181,4 +235,5 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; if
 
 <style>
 :root{font-family:Inter,"Noto Sans SC",system-ui,sans-serif;color:#20304c;background:#f3f6fa}*{box-sizing:border-box}body{margin:0}button,input,select,textarea{font:inherit}button{cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #6db6ee;outline-offset:2px}.shell{display:flex;min-height:100vh}.rail{width:220px;background:#142c4d;color:#dce8f6;padding:28px 16px;display:flex;flex-direction:column}.brand{padding:0 12px 36px;display:flex;flex-direction:column;gap:5px}.brand-mark{font-family:Georgia,serif;font-size:31px;letter-spacing:.09em;color:#fff}.brand small,.rail-foot{font-size:10px;letter-spacing:.18em;color:#91acc8}.rail nav{display:grid;gap:4px}.rail nav button{border:0;background:transparent;text-align:left;color:inherit;padding:12px 14px;border-radius:8px}.rail nav button:hover,.rail nav button.active{background:#25486c;color:white}.rail nav button.active{box-shadow:inset 3px 0 #60c6d4}.rail-foot{margin-top:auto;padding:22px 12px 0}main{flex:1;min-width:0;padding:34px clamp(20px,4vw,64px)}header,.panel-head{display:flex;align-items:center;justify-content:space-between;gap:16px}header{margin-bottom:28px}.eyebrow{font-size:12px;letter-spacing:.12em;color:#60809b;margin:0 0 8px}h1{font:normal 38px Georgia,serif;margin:0;color:#173254}h2{font-size:18px;margin:0}.panel{background:#fff;border:1px solid #dfe7ef;border-radius:10px;padding:22px;margin-bottom:18px;box-shadow:0 8px 28px #2343650a}.panel-head{font-size:13px;color:#6d7d91;margin-bottom:16px}.light,.primary{border:1px solid #bdcedc;border-radius:7px;background:white;padding:9px 16px;color:#244a70}.primary{background:#236488;border-color:#236488;color:white}.text{border:0;background:transparent;color:#176f9a;padding:5px}.danger{color:#ac4152}.alert,.notice{padding:12px 16px;border-radius:7px}.alert{background:#fff0f0;color:#a33}.notice{background:#e7f8f7;color:#17685e}.hint{margin:0 0 24px;color:#63768b}.grid{display:grid;grid-template-columns:repeat(2,minmax(190px,1fr));gap:18px;max-width:760px;margin-bottom:24px}label{display:flex;flex-direction:column;gap:7px;color:#46617b;font-size:13px}input,select,textarea{border:1px solid #cad7e2;border-radius:6px;padding:10px;color:#20304c;background:#fff;min-width:0}textarea{min-height:85px}.key-form{display:grid;gap:16px;max-width:620px}.key-form .primary{justify-self:start}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;text-align:left}th{font-size:12px;color:#67809b;font-weight:600;border-bottom:1px solid #e3eaf1;padding:10px}td{border-bottom:1px solid #edf1f5;padding:13px 10px}tr:last-child td{border:0}.mono{font-family:ui-monospace,SFMono-Regular,monospace}.status{display:inline-block;background:#ecf4f7;border-radius:20px;padding:4px 9px;font-size:12px}.actions{display:flex;gap:9px;flex-wrap:wrap;align-items:center}.empty{padding:28px 8px;color:#8293a5}.detail dl{display:grid;grid-template-columns:120px 1fr;gap:12px}.detail dt{color:#8091a2}.detail dd{margin:0}.detail .actions{margin-top:20px}.upgrade-form{display:flex;align-items:end;gap:12px;margin-top:22px;flex-wrap:wrap}.upgrade-form label{min-width:220px}.upgrade-form button:disabled{opacity:.5;cursor:not-allowed}.terminal{background:#0b1c30;color:#d8f7e9;min-height:300px;padding:18px;white-space:pre-wrap;overflow:auto;outline:none;font:14px/1.6 ui-monospace,monospace}@media(max-width:700px){.shell{display:block}.rail{width:auto;padding:14px}.brand{padding:0 4px 12px}.rail nav{display:flex;overflow-x:auto}.rail nav button{white-space:nowrap}.rail-foot{display:none}main{padding:20px}.grid{grid-template-columns:1fr}h1{font-size:30px}}
+.quote{color:#46617b}.quote strong{font-size:22px;color:#173254;margin-left:10px}.primary:disabled{opacity:.5;cursor:not-allowed}
 </style>

@@ -14,8 +14,7 @@ make build
 cluster-scoped template, preinstall, and upgrade CRDs. Use `make docker-build`
 for the manager/UI image and `make docker-build-system` for the Ubuntu system
 image; override `IMG` and `SYSTEM_IMG` with registry tags before publishing.
-`make helm-lint` and `make helm-template` use a placeholder quote Secret name
-for local checks. For deployment, use `make deployHelm HELM_ARGS='-f values.yaml'`
+For deployment, use `make deployHelm HELM_ARGS='-f values.yaml'`
 with real OIDC, payment, gateway, and image settings.
 
 ## Runtime integration
@@ -24,7 +23,7 @@ The multi-stage `Dockerfile` builds the Go manager and the Vite UI at `/app/ui/d
 Build and publish that image before setting the chart's `image.repository` and
 `image.tag`; an older manager-only image does not contain the UI assets.
 CSM creates the `ubuntu-24.04` SystemTemplate on startup if it is absent.
-Its image comes from `system.image` (default `w7panel-csm-system:ubuntu-24.04`).
+Its image comes from `system.image` (default public Ubuntu system image in CNB).
 Build and publish this system image with `Dockerfile.system` before buying a host.
 It uses a systemd Ubuntu base and enables OpenSSH. Host Pods prepare SSH keys,
 then run `/sbin/init` as PID 1 under Sysbox; they do not install a Kubernetes
@@ -36,17 +35,14 @@ The sample manifest is in `config/samples/`.
 The manager requires in-cluster Kubernetes credentials and the Helm values for
 `oidc.discoveryURL`, `oidc.audience`, `oidc.clientID`, `oidc.redirectURI`,
 `ssh.gatewayNamespace`, `ssh.gatewayName`, `payment.productID`,
-`payment.callbackHost`, `payment.quoteURL`, and `payment.quoteSecretName`.
+`payment.callbackHost`.
 Discovery, issuer and JWKS URLs may use HTTP only on an explicitly configured
 cluster Service or loopback host. The browser authorization endpoint and
 redirect URI must use HTTPS.
 When the issuer is a cluster Service, set `oidc.publicAuthorizationURL` to the
 HTTPS authorization endpoint exposed to browsers. Its path must match discovery.
-The quote Secret key defaults to `token`. The quote service must be a trusted
-HTTPS endpoint accepting an authenticated JSON `order.Request` and returning
-`{"amountCents":1234,"params":{"hour":"720","cpu":"2","memory":"4","storage":"40","bandwidth":"5"}}`.
-It calculates the price on the server; the browser cannot submit a price.
-An explicit `"free":true` is required when `amountCents` is zero.
+The founder sets CPU, memory, storage, and bandwidth monthly prices on the
+费用设置 page. CSM calculates quotes on the server; an unset price blocks orders.
 
 Each tenant namespace needs a Secret named by `payment.credentialSecretName`
 (default `csm-w7-order`) containing `account`, `appId`, `clusterId`, and either

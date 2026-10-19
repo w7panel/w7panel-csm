@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,60 @@ import (
 
 	"github.com/w7panel/w7panel-csm/pkg/order"
 )
+
+type pricingStub struct{ saved *order.Prices }
+
+func (p *pricingStub) Get(context.Context) (order.Prices, error) {
+	if p.saved == nil {
+		return order.Prices{}, order.ErrPricingMissing
+	}
+	return *p.saved, nil
+}
+func (p *pricingStub) Put(_ context.Context, v order.Prices) error { p.saved = &v; return nil }
+func (p *pricingStub) Delete(context.Context) error                { p.saved = nil; return nil }
+func (p *pricingStub) Quote(_ context.Context, r order.Request) (int64, string, url.Values, error) {
+	if p.saved == nil {
+		return 0, "", nil, order.ErrPricingMissing
+	}
+	return p.saved.CPUCents * r.CPU, "", nil, nil
+}
+
+func TestPricingFounderGuardAndQuote(t *testing.T) {
+	pricing := &pricingStub{}
+	server := NewServer(func(_ context.Context, token string) (Identity, error) {
+		return Identity{Namespace: "tenant-a", Founder: token == "founder"}, nil
+	}, &backendStub{}, order.Service{Gateway: gatewayStub{}, Store: storeStub{}}, "")
+	server.Pricing = pricing
+	call := func(method, path, token, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		server.Handler().ServeHTTP(w, req)
+		return w
+	}
+	if w := call("GET", Prefix+"/pricing", "tenant", ""); w.Code != 404 {
+		t.Fatalf("missing pricing: %d", w.Code)
+	}
+	body := `{"cpuCents":100,"memoryGiCents":50,"storageGiCents":10,"bandwidthMbpsCents":20}`
+	if w := call("PUT", Prefix+"/pricing", "tenant", body); w.Code != 403 {
+		t.Fatalf("tenant changed pricing: %d", w.Code)
+	}
+	if w := call("PUT", Prefix+"/pricing", "founder", `{"cpuCents":100}`); w.Code != 400 {
+		t.Fatalf("partial pricing accepted: %d", w.Code)
+	}
+	if w := call("PUT", Prefix+"/pricing", "founder", body); w.Code != 200 {
+		t.Fatalf("founder pricing update: %d %s", w.Code, w.Body.String())
+	}
+	if w := call("POST", Prefix+"/orders/quote", "tenant", `{"kind":"csm","action":"buy","name":"host","cpu":2}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"amountCents":200`) {
+		t.Fatalf("quote: %d %s", w.Code, w.Body.String())
+	}
+	if w := call("DELETE", Prefix+"/pricing", "founder", ""); w.Code != 204 {
+		t.Fatalf("reset: %d", w.Code)
+	}
+	if w := call("POST", Prefix+"/orders/quote", "tenant", `{}`); w.Code != 503 {
+		t.Fatalf("quote after reset: %d", w.Code)
+	}
+}
 
 type backendStub struct {
 	namespace string

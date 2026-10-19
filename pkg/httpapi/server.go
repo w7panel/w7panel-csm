@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/w7panel/w7panel-csm/pkg/order"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 const Prefix = "/csm-api/v1"
@@ -38,9 +39,15 @@ type Backend interface {
 }
 
 type Server struct {
-	Authenticate   Authenticate
-	Backend        Backend
-	Orders         order.Service
+	Authenticate Authenticate
+	Backend      Backend
+	Orders       order.Service
+	Pricing      interface {
+		Get(context.Context) (order.Prices, error)
+		Put(context.Context, order.Prices) error
+		Delete(context.Context) error
+		Quote(context.Context, order.Request) (int64, string, url.Values, error)
+	}
 	UIRoot         string // absolute path to ui/dist at runtime
 	KubeURL        string
 	KubeToken      string
@@ -95,10 +102,99 @@ func (s *Server) Handler() http.Handler {
 	route("POST", "/ssh-keys", s.action("ssh-keys", "create"))
 	route("DELETE", "/ssh-keys/{name}", s.action("ssh-keys", "delete"))
 	route("POST", "/orders", s.createOrder)
+	route("GET", "/pricing", s.getPricing)
+	route("PUT", "/pricing", s.putPricing)
+	route("DELETE", "/pricing", s.deletePricing)
+	route("POST", "/orders/quote", s.quoteOrder)
 	route("GET", "/orders", s.listOrders)
 	route("POST", "/orders/{sn}/refresh", s.refreshOrder)
 	mux.HandleFunc("POST "+Prefix+"/order/notify", s.notifyOrder)
 	return mux
+}
+
+func (s *Server) getPricing(w http.ResponseWriter, r *http.Request) {
+	if s.Pricing == nil {
+		respondError(w, 503, "pricing is not configured")
+		return
+	}
+	prices, err := s.Pricing.Get(r.Context())
+	if errors.Is(err, order.ErrPricingMissing) {
+		respondError(w, 404, "pricing is not configured")
+		return
+	}
+	writeResult(w, prices, err)
+}
+
+func (s *Server) putPricing(w http.ResponseWriter, r *http.Request) {
+	if !identity(r.Context()).Founder {
+		respondError(w, 403, "founder required")
+		return
+	}
+	if s.Pricing == nil {
+		respondError(w, 503, "pricing is not configured")
+		return
+	}
+	var input struct {
+		CPUCents           *int64 `json:"cpuCents"`
+		MemoryGiCents      *int64 `json:"memoryGiCents"`
+		StorageGiCents     *int64 `json:"storageGiCents"`
+		BandwidthMbpsCents *int64 `json:"bandwidthMbpsCents"`
+	}
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&input) != nil || decoder.Decode(new(any)) != io.EOF || input.CPUCents == nil || input.MemoryGiCents == nil || input.StorageGiCents == nil || input.BandwidthMbpsCents == nil {
+		respondError(w, 400, "invalid pricing JSON")
+		return
+	}
+	prices := order.Prices{CPUCents: *input.CPUCents, MemoryGiCents: *input.MemoryGiCents, StorageGiCents: *input.StorageGiCents, BandwidthMbpsCents: *input.BandwidthMbpsCents}
+	if err := s.Pricing.Put(r.Context(), prices); err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	writeResult(w, prices, nil)
+}
+
+func (s *Server) deletePricing(w http.ResponseWriter, r *http.Request) {
+	if !identity(r.Context()).Founder {
+		respondError(w, 403, "founder required")
+		return
+	}
+	if s.Pricing == nil {
+		respondError(w, 503, "pricing is not configured")
+		return
+	}
+	if err := s.Pricing.Delete(r.Context()); err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) quoteOrder(w http.ResponseWriter, r *http.Request) {
+	if s.Pricing == nil {
+		respondError(w, 503, "pricing is not configured")
+		return
+	}
+	ns, ok := namespace(w, r)
+	if !ok {
+		return
+	}
+	var req order.Request
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 64<<10))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&req) != nil || decoder.Decode(new(any)) != io.EOF {
+		respondError(w, 400, "invalid JSON")
+		return
+	}
+	req.Namespace = ns
+	cents, _, _, err := s.Pricing.Quote(r.Context(), req)
+	if errors.Is(err, order.ErrPricingMissing) {
+		respondError(w, 503, "pricing is not configured")
+		return
+	}
+	writeResult(w, struct {
+		AmountCents int64 `json:"amountCents"`
+	}{cents}, err)
 }
 
 type identityKey struct{}
@@ -153,15 +249,7 @@ func namespace(w http.ResponseWriter, r *http.Request) (string, bool) {
 }
 
 func validName(s string) bool {
-	if s == "" || len(s) > 63 || s[0] == '-' || s[len(s)-1] == '-' {
-		return false
-	}
-	for _, c := range s {
-		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
-			return false
-		}
-	}
-	return true
+	return s != "" && len(s) <= 63 && len(validation.IsDNS1123Subdomain(s)) == 0
 }
 
 func (s *Server) list(kind string) http.HandlerFunc {
@@ -363,6 +451,8 @@ func writeResult(w http.ResponseWriter, value any, err error) {
 	if err != nil {
 		code := 500
 		switch {
+		case errors.Is(err, order.ErrPricingMissing):
+			code = 503
 		case errors.Is(err, ErrNotFound), errors.Is(err, order.ErrNotFound):
 			code = 404
 		case errors.Is(err, ErrForbidden):

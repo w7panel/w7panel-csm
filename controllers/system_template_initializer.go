@@ -16,7 +16,7 @@ import (
 func EnsureOfficialSystemTemplate(ctx context.Context, c client.Client) error {
 	image := os.Getenv("CSM_SYSTEM_IMAGE")
 	if image == "" {
-		image = "w7panel-csm-system:ubuntu-24.04"
+		image = "docker.cnb.cool/i0358/w7panel-csm:system-ubuntu-24.04-test-20261019"
 	}
 	digest := sha256.Sum256([]byte(image))
 	template := &csm.SystemTemplate{ObjectMeta: metav1.ObjectMeta{Name: "ubuntu-24.04"}, Spec: csm.SystemTemplateSpec{
