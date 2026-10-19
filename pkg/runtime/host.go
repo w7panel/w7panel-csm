@@ -30,7 +30,7 @@ func Deployment(host *api.Csm, image string, disks []DiskMount) (*appsv1.Deploym
 		}
 	}
 	labels := map[string]string{"csm.w7.cc/host": host.Name}
-	container := corev1.Container{Name: "host", Image: image, Ports: []corev1.ContainerPort{{Name: "ssh", ContainerPort: 22}}}
+	container := corev1.Container{Name: "host", Image: image, Ports: []corev1.ContainerPort{{Name: "ssh", ContainerPort: 2222}}}
 	if host.Spec.CPU != "" || host.Spec.Memory != "" {
 		container.Resources.Requests = corev1.ResourceList{}
 		if host.Spec.CPU != "" {
@@ -62,12 +62,14 @@ func Deployment(host *api.Csm, image string, disks []DiskMount) (*appsv1.Deploym
 chmod 700 /root/.ssh
 printf '%s\n' "$CSM_SSH_PUBLIC_KEYS" > /root/.ssh/authorized_keys
 chmod 600 /root/.ssh/authorized_keys
-printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin prohibit-password\nPubkeyAuthentication yes\n' > /etc/ssh/sshd_config.d/99-csm.conf
+printf 'Port 2222\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin prohibit-password\nPubkeyAuthentication yes\n' > /etc/ssh/sshd_config.d/99-csm.conf
 ssh-keygen -A
 /usr/sbin/sshd -t
+/usr/sbin/sshd -T | grep -qx 'port 2222'
 /usr/sbin/sshd -T | grep -qx 'passwordauthentication no'
 /usr/sbin/sshd -T | grep -qx 'kbdinteractiveauthentication no'
 /usr/sbin/sshd -T | grep -Eq '^permitrootlogin (prohibit-password|without-password)$'
+systemctl disable ssh.socket >/dev/null 2>&1 || true
 exec /sbin/init`}
 	intent, _ := json.Marshal([]map[string]any{{"name": "host", "volumeName": "system", "path": "rootfs", "persistentSpecialMounts": true}})
 	annotations := map[string]string{"sysbox/rootfs-rw-layer": string(intent)}
@@ -84,6 +86,6 @@ exec /sbin/init`}
 }
 
 func Service(host *api.Csm) *corev1.Service {
-	return &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: host.Name, Namespace: host.Namespace}, Spec: corev1.ServiceSpec{Selector: map[string]string{"csm.w7.cc/host": host.Name}, Ports: []corev1.ServicePort{{Name: "ssh", Port: 22, TargetPort: intstr.FromInt32(22)}}}}
+	return &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: host.Name, Namespace: host.Namespace}, Spec: corev1.ServiceSpec{Selector: map[string]string{"csm.w7.cc/host": host.Name}, Ports: []corev1.ServicePort{{Name: "ssh", Port: 22, TargetPort: intstr.FromInt32(2222)}}}}
 }
 func ptr(s string) *string { return &s }
