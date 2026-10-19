@@ -67,7 +67,7 @@ ssh-keygen -A
 /usr/sbin/sshd -t
 /usr/sbin/sshd -T | grep -qx 'passwordauthentication no'
 /usr/sbin/sshd -T | grep -qx 'kbdinteractiveauthentication no'
-/usr/sbin/sshd -T | grep -qx 'permitrootlogin prohibit-password'
+/usr/sbin/sshd -T | grep -Eq '^permitrootlogin (prohibit-password|without-password)$'
 exec /sbin/init`}
 	intent, _ := json.Marshal([]map[string]any{{"name": "host", "volumeName": "system", "path": "rootfs", "persistentSpecialMounts": true}})
 	annotations := map[string]string{"sysbox/rootfs-rw-layer": string(intent)}
