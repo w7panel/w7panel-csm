@@ -8,6 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
 )
@@ -53,7 +54,7 @@ func (r KubernetesRunner) Run(ctx context.Context, namespace, host, shell string
 	}
 	container := pod.Spec.Containers[0].Name
 	req := r.Kube.CoreV1().RESTClient().Post().Namespace(namespace).Resource("pods").Name(pod.Name).SubResource("exec")
-	req.VersionedParams(&corev1.PodExecOptions{Container: container, Command: []string{"/bin/sh", "-c", shell}, Stdout: true, Stderr: true}, metav1.ParameterCodec)
+	req.VersionedParams(&corev1.PodExecOptions{Container: container, Command: []string{"/bin/sh", "-c", shell}, Stdout: true, Stderr: true}, scheme.ParameterCodec)
 	executor, err := remotecommand.NewSPDYExecutor(r.Config, "POST", req.URL())
 	if err != nil {
 		return "", err
