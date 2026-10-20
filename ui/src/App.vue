@@ -1,9 +1,10 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { api, items } from './api'
 import { finishLogin, startLogin } from './auth'
 import SystemTemplates from './SystemTemplates.vue'
 import UpgradeVersions from './UpgradeVersions.vue'
+import HostDetail from './HostDetail.vue'
 
 const tabs = [
   ['hosts', '主机'], ['templates', '系统模板'],
@@ -11,7 +12,10 @@ const tabs = [
   ['disks', '数据管理'],
   ['versions', '版本升级'], ['pricing', '费用设置'],
 ]
-const section = ref(location.hash.slice(1) === 'policies' ? 'versions' : location.hash.slice(1) === 'apps' ? 'templates' : location.hash.slice(1) === 'keys' ? 'hosts' : location.hash.slice(1) || 'hosts')
+function hostNameFromHash() { const match = location.hash.match(/^#hosts\/(.+)$/); try { return match ? decodeURIComponent(match[1]) : '' } catch { return '' } }
+const hostRouteName = ref(hostNameFromHash())
+const hostLoading = ref(false)
+const section = ref(hostRouteName.value ? 'hosts' : location.hash.slice(1) === 'policies' ? 'versions' : location.hash.slice(1) === 'apps' ? 'templates' : location.hash.slice(1) === 'keys' ? 'hosts' : location.hash.slice(1) || 'hosts')
 const templateTab = ref(location.hash.slice(1) === 'apps' ? 'apps' : 'templates')
 const mobileMenuOpen = ref(false)
 const loading = ref(false)
@@ -36,10 +40,8 @@ const purchasePeriods = [
   ...Array.from({ length: 10 }, (_, index) => ({ quantity: index + 1, unit: 'year' })),
 ]
 const mountTarget = ref('')
-const hostKey = ref('')
 const sshHost = ref('')
 const versions = ref([])
-const upgradeTarget = ref('')
 const payment = ref(null)
 const pricingFields = [
   ['cpuCents', 'CPU', '核'], ['memoryGiCents', '内存', 'GiB'],
@@ -88,7 +90,6 @@ function openTerminal() {
   terminalSocket.onerror = () => { error.value = '终端连接失败'; terminalOpen.value = false }
   terminalSocket.onclose = () => { terminalText.value += '\n[连接已关闭]' }
 }
-function approveUpgrade() { if (window.confirm('确认对这台主机执行所选版本？')) run(`/csms/${nameOf(selected.value)}/upgrade`, { versionName: upgradeTarget.value }) }
 function terminalKey(event) {
   if (terminalSocket?.readyState !== WebSocket.OPEN) return
   const key = event.key === 'Enter' ? '\r' : event.key === 'Backspace' ? '\x7f' : event.key.length === 1 ? event.key : ''
@@ -101,7 +102,7 @@ const title = computed(() => section.value === 'purchase' ? '购买' : tabs.find
 const resource = { hosts: 'csms', templates: 'system-templates', preinstall: 'preinstall-executions', upgrade: 'upgrade-executions', orders: 'orders', disks: 'data-disks', apps: 'preinstall-applications', versions: 'upgrade-versions' }
 
 async function login() { try { await startLogin() } catch (e) { error.value = e.message } }
-function go(id) { if (id === 'apps') { templateTab.value = 'apps'; id = 'templates' } section.value = id; location.hash = id; selected.value = null; mobileMenuOpen.value = false }
+function go(id) { if (id === 'apps') { templateTab.value = 'apps'; id = 'templates' } section.value = id; hostRouteName.value = ''; location.hash = id; selected.value = null; terminalSocket?.close(); terminalOpen.value = false; mobileMenuOpen.value = false }
 function orderForDisk(action, disk) {
   form.value = { kind: 'dataDisk', action, name: disk?.metadata?.name || '', templateName: '', cpu: 0, memoryGi: 0, storageGi: action === 'expand' ? Number(disk.spec?.storageGi || 0) + 10 : action === 'buy' ? 10 : 0, bandwidthMbps: 0, quantity: 1, unit: 'month' }
   go('purchase')
@@ -213,6 +214,24 @@ async function detail(kind, row) {
   try { selected.value = await api(`/${kind}/${encodeURIComponent(name)}`) }
   catch (e) { error.value = e.message }
 }
+async function loadHost(name) {
+  error.value = ''; hostLoading.value = true
+  try { const host = await api(`/csms/${encodeURIComponent(name)}`); if (hostRouteName.value === name) selected.value = host }
+  catch (e) { if (hostRouteName.value === name) { selected.value = null; error.value = e.message } }
+  finally { if (hostRouteName.value === name) hostLoading.value = false }
+}
+function openHost(row) {
+  const name = nameOf(row)
+  const hash = `#hosts/${encodeURIComponent(name)}`
+  if (location.hash === hash) loadHost(name)
+  else location.hash = hash
+}
+function syncHostRoute() {
+  const name = hostNameFromHash()
+  hostRouteName.value = name
+  if (name) { const wasHost = section.value === 'hosts'; section.value = 'hosts'; if (!wasHost || nameOf(selected.value) !== name) { selected.value = null; loadHost(name) } }
+  else if (section.value === 'hosts') { selected.value = null; terminalSocket?.close(); terminalOpen.value = false }
+}
 async function run(path, body) {
   error.value = ''; notice.value = ''; payment.value = null
   try {
@@ -221,6 +240,7 @@ async function run(path, body) {
     if (result?.ticket) payment.value = result
     if (section.value === 'disks') selected.value = null
     await load()
+    if (hostRouteName.value) await loadHost(hostRouteName.value)
     return result
   } catch (e) { error.value = e.message }
 }
@@ -259,7 +279,8 @@ watch(() => form.value.kind, kind => {
     if (!form.value.bandwidthMbps) form.value.bandwidthMbps = 5
   }
 })
-onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; sshHost.value = (await api('/auth/config')).sshHost || ''; if (loggedIn.value) await load() } catch (e) { error.value = e.message } })
+onMounted(async () => { window.addEventListener('hashchange', syncHostRoute); try { if (await finishLogin()) loggedIn.value = true; sshHost.value = (await api('/auth/config')).sshHost || ''; if (loggedIn.value) { await load(); if (hostRouteName.value) await loadHost(hostRouteName.value) } } catch (e) { error.value = e.message } })
+onUnmounted(() => { window.removeEventListener('hashchange', syncHostRoute); terminalSocket?.close() })
 </script>
 
 <template>
@@ -277,8 +298,8 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; ss
       </a-menu>
     </a-drawer>
     <main>
-      <a-breadcrumb class="breadcrumb"><a-breadcrumb-item>CSM 管理</a-breadcrumb-item><a-breadcrumb-item>{{ title }}</a-breadcrumb-item></a-breadcrumb>
-      <header><h1>{{ title }}</h1><div class="header-actions"><a-button v-if="section === 'hosts'" type="primary" @click="go('purchase')">购买资源</a-button><a-button v-if="loggedIn" @click="load">刷新</a-button></div></header>
+      <a-breadcrumb class="breadcrumb"><a-breadcrumb-item>CSM 管理</a-breadcrumb-item><a-breadcrumb-item>{{ title }}</a-breadcrumb-item><a-breadcrumb-item v-if="hostRouteName">{{ hostRouteName }}</a-breadcrumb-item></a-breadcrumb>
+      <header v-if="!hostRouteName"><h1>{{ title }}</h1><div class="header-actions"><a-button v-if="section === 'hosts'" type="primary" @click="go('purchase')">购买资源</a-button><a-button v-if="loggedIn" @click="load">刷新</a-button></div></header>
       <p v-if="error" class="alert" role="alert">{{ error }}</p><p v-if="notice" class="notice" role="status">{{ notice }} <a v-if="payment?.ticket" :href="`https://ip.w7.cc/pay/${encodeURIComponent(payment.ticket)}?header=false&footer=false`" target="_blank" rel="noopener noreferrer">前往 W7 云支付 ↗</a></p>
       <section v-if="!loggedIn" class="panel"><h2>登录 CSM</h2><p class="hint">使用 W7Panel 账户授权后管理云主机。</p><button class="primary" @click="login">登录</button></section>
       <template v-else><section v-if="section === 'purchase'" class="panel purchase-page">
@@ -355,22 +376,17 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; ss
         <div v-if="!loading && !rows.length" class="empty">暂无数据盘</div>
         <div v-else class="table-wrap disk-table"><table><thead><tr><th>名称 / PVC</th><th>所属主机</th><th>容量</th><th>到期时间</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td><strong>{{ nameOf(row) }}</strong><small>{{ row.status?.pvcName || 'PVC 待创建' }}</small></td><td>{{ row.spec?.attached ? row.spec?.csmName : '未挂载' }}</td><td>{{ row.spec?.storageGi || 0 }} GiB</td><td>{{ dateText(row.spec?.expireTime) }}</td><td><span class="status">{{ diskStatus(row) }}</span></td><td class="actions"><button class="text" @click="detail('data-disks', row)">详情</button><button v-if="row.spec?.paid && !row.spec?.attached && row.status?.phase === 'Available'" class="text" @click="detail('data-disks', row)">挂载</button><button v-if="row.spec?.attached" class="text" @click="detail('data-disks', row)">卸载</button><button v-if="row.spec?.paid" class="text" @click="orderForDisk('renew', row)">续费</button><button v-if="row.spec?.paid" class="text" @click="orderForDisk('expand', row)">扩容</button><button v-if="!row.spec?.attached" class="text danger" @click="deleteDisk(row)">删除</button></td></tr></tbody></table></div>
       </section>
-      <section v-else-if="!['purchase', 'pricing', 'templates', 'versions'].includes(section)" class="panel">
+      <section v-else-if="!hostRouteName && !['purchase', 'pricing', 'templates', 'versions'].includes(section)" class="panel">
         <div class="panel-head"><span>{{ loading ? '正在加载…' : `${rows.length} 条记录` }}</span></div>
         <div v-if="!loading && rows.length === 0" class="empty">暂无记录。{{ section === 'hosts' ? '可从购买页面创建第一台主机。' : '' }}</div>
-        <div v-else class="table-wrap"><table><thead><tr><th>名称 / 订单号</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td class="mono">{{ nameOf(row) }}</td><td><span class="status">{{ phaseOf(row) }}</span></td><td class="actions">
-          <button v-if="section === 'hosts'" class="text" @click="detail(resource[section], row)">详情</button>
+        <div v-else class="table-wrap"><table><thead><tr><th>名称 / 订单号</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td class="mono"><a v-if="section === 'hosts'" class="table-link host-name-link" :href="`#hosts/${encodeURIComponent(nameOf(row))}`" @click.prevent="openHost(row)">{{ nameOf(row) }}</a><template v-else>{{ nameOf(row) }}</template></td><td><span class="status">{{ phaseOf(row) }}</span></td><td class="actions">
           <button v-if="section === 'hosts'" class="text" @click="run(`/csms/${nameOf(row)}/preinstall`)">预装</button>
-          <button v-if="section === 'hosts'" class="text" @click="detail('csms', row)">升级</button>
-          <button v-if="section === 'hosts'" class="text" @click="detail('csms', row)">终端入口</button>
+          <button v-if="section === 'hosts'" class="text" @click="openHost(row)">升级 / 终端</button>
         </td></tr></tbody></table></div>
       </section>
-      <section v-if="selected" class="panel detail"><div class="panel-head"><h2>{{ nameOf(selected) }}</h2><button class="text" @click="selected = null">关闭</button></div>
-        <dl v-if="section !== 'disks'"><dt>状态</dt><dd>{{ phaseOf(selected) }}</dd><dt>系统模板</dt><dd>{{ selected.spec?.templateName || '—' }}</dd><dt>SSH 端口</dt><dd>{{ selected.status?.sshPort || '—' }}</dd><template v-if="section === 'hosts' && sshHost && selected.status?.sshPort"><dt>SSH 连接</dt><dd class="mono">ssh -p {{ selected.status.sshPort }} root@{{ sshHost }}</dd></template></dl>
-        <div v-if="section === 'hosts'" class="upgrade-form"><label>升级目标版本<select v-model="upgradeTarget"><option value="">选择版本</option><option v-for="version in versions" :key="nameOf(version)" :value="nameOf(version)">{{ nameOf(version) }}</option></select></label><button class="light" :disabled="!upgradeTarget" @click="approveUpgrade">确认升级</button></div>
-        <div v-if="section === 'hosts'" class="actions"><button class="light" @click="openTerminal">打开网页终端</button></div><div v-if="section === 'hosts'" class="actions"><input v-model.trim="hostKey" aria-label="SSH 公钥" placeholder="粘贴 SSH 公钥" /><button class="light" @click="run(`/csms/${nameOf(selected)}/ssh-keys`, { publicKey: hostKey })">添加到主机</button></div>
-        <template v-if="section === 'disks'"><dl><dt>容量</dt><dd>{{ selected.spec?.storageGi || 0 }} GiB</dd><dt>到期时间</dt><dd>{{ dateText(selected.spec?.expireTime) }}</dd><dt>PVC</dt><dd>{{ selected.status?.pvcName || '待创建' }}</dd><dt>挂载路径</dt><dd>{{ selected.spec?.attached ? selected.spec?.mountPath || '—' : '未挂载' }}</dd></dl><div class="actions" v-if="selected.spec?.paid"><template v-if="!selected.spec?.attached && selected.status?.phase === 'Available'"><label>目标主机<select v-model="mountTarget"><option value="">选择主机</option><option v-for="host in mountHosts.filter(host => host.spec?.paid)" :key="nameOf(host)" :value="nameOf(host)">{{ nameOf(host) }}</option></select></label><button class="light" :disabled="!mountTarget" @click="run(`/data-disks/${encodeURIComponent(nameOf(selected))}/mount`, { csmName: mountTarget })">挂载</button></template><button v-if="selected.spec?.attached" class="light" @click="unmountDisk(selected)">卸载</button></div></template>
-      </section>
+      <HostDetail v-if="section === 'hosts' && hostRouteName && selected" :host="selected" :versions="versions" :ssh-host="sshHost" :loading="hostLoading" @back="go('hosts')" @refresh="loadHost(hostRouteName)" @preinstall="run(`/csms/${encodeURIComponent(hostRouteName)}/preinstall`)" @upgrade="versionName => run(`/csms/${encodeURIComponent(hostRouteName)}/upgrade`, { versionName })" @terminal="openTerminal" @add-key="async (publicKey, done) => { if ((await run(`/csms/${encodeURIComponent(hostRouteName)}/ssh-keys`, { publicKey })) !== undefined) done() }" />
+      <section v-else-if="section === 'hosts' && hostRouteName && hostLoading" class="panel"><p class="hint">正在加载主机详情…</p></section>
+      <section v-if="selected && section === 'disks'" class="panel detail"><div class="panel-head"><h2>{{ nameOf(selected) }}</h2><button class="text" @click="selected = null">关闭</button></div><dl><dt>容量</dt><dd>{{ selected.spec?.storageGi || 0 }} GiB</dd><dt>到期时间</dt><dd>{{ dateText(selected.spec?.expireTime) }}</dd><dt>PVC</dt><dd>{{ selected.status?.pvcName || '待创建' }}</dd><dt>挂载路径</dt><dd>{{ selected.spec?.attached ? selected.spec?.mountPath || '—' : '未挂载' }}</dd></dl><div class="actions" v-if="selected.spec?.paid"><template v-if="!selected.spec?.attached && selected.status?.phase === 'Available'"><label>目标主机<select v-model="mountTarget"><option value="">选择主机</option><option v-for="host in mountHosts.filter(host => host.spec?.paid)" :key="nameOf(host)" :value="nameOf(host)">{{ nameOf(host) }}</option></select></label><button class="light" :disabled="!mountTarget" @click="run(`/data-disks/${encodeURIComponent(nameOf(selected))}/mount`, { csmName: mountTarget })">挂载</button></template><button v-if="selected.spec?.attached" class="light" @click="unmountDisk(selected)">卸载</button></div></section>
       <section v-if="terminalOpen" class="panel"><div class="panel-head"><h2>网页终端</h2><button class="text" @click="terminalSocket?.close(); terminalOpen = false">关闭</button></div><pre class="terminal" tabindex="0" @keydown="terminalKey">{{ terminalText || '连接中…' }}</pre><p class="hint">点击终端区域后输入命令。</p></section>
       </template>
     </main>
@@ -434,6 +450,7 @@ textarea { min-height: 90px; resize: vertical; }
 .quote strong { margin-left: 8px; color: var(--color-text-1, #1d2129); font-size: 20px; }
 .table-wrap { max-width: 100%; overflow-x: auto; }
 .table-wrap .arco-table { min-width: 560px; }
+.host-name-link { display: inline-flex; align-items: center; min-height: 44px; font-weight: 600; text-decoration: none; }
 .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 .actions input { max-width: 320px; }
