@@ -18,6 +18,18 @@ const rows = ref([])
 const selected = ref(null)
 const templates = ref([])
 const form = ref({ kind: 'csm', action: 'buy', name: '', templateName: '', cpu: 2, memoryGi: 4, storageGi: 40, bandwidthMbps: 5, quantity: 1, unit: 'month' })
+const purchasePrices = ref(null)
+const purchaseResources = [
+  { field: 'cpu', label: 'CPU', unit: '核', price: 'cpuCents', max: 64 },
+  { field: 'memoryGi', label: '内存', unit: 'GiB', price: 'memoryGiCents', max: 256 },
+  { field: 'storageGi', label: '存储', unit: 'GiB', price: 'storageGiCents', max: 2048 },
+  { field: 'bandwidthMbps', label: '带宽', unit: 'Mbps', price: 'bandwidthMbpsCents', max: 1000 },
+]
+const visiblePurchaseResources = computed(() => purchaseResources.filter(item => form.value.kind === 'csm' || item.field === 'storageGi'))
+const purchasePeriods = [
+  { quantity: 1, unit: 'month' }, { quantity: 2, unit: 'month' }, { quantity: 3, unit: 'month' },
+  ...Array.from({ length: 10 }, (_, index) => ({ quantity: index + 1, unit: 'year' })),
+]
 const key = ref({ name: '', publicKey: '' })
 const mountTarget = ref('')
 const hostKey = ref('')
@@ -105,6 +117,11 @@ function orderRequest() {
   if (request.action === 'expand') { request.templateName = ''; request.quantity = 0; request.unit = '' }
   return request
 }
+function linePrice(item) {
+  if (!purchasePrices.value || form.value.action !== 'buy') return '—'
+  const months = form.value.quantity * (form.value.unit === 'year' ? 12 : 1)
+  return `¥${((purchasePrices.value[item.price] * Number(form.value[item.field] || 0) * months) / 100).toFixed(2)}`
+}
 function scheduleQuote() {
   clearTimeout(quoteTimer)
   const sequence = ++quoteSequence
@@ -142,7 +159,11 @@ async function load() {
   try {
     rows.value = section.value === 'purchase' || section.value === 'pricing' ? [] : items(await api('/' + (resource[section.value] || 'csms')))
     if (section.value === 'orders') rows.value.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    if (section.value === 'purchase') { templates.value = items(await api('/system-templates')); scheduleQuote() }
+    if (section.value === 'purchase') {
+      templates.value = items(await api('/system-templates'))
+      purchasePrices.value = await api('/pricing').catch(e => { if (e.status === 404) return null; throw e })
+      scheduleQuote()
+    }
     if (section.value === 'pricing') {
       const saved = await api('/pricing').catch(e => { if (e.status === 404) return null; throw e })
       pricing.value = Object.fromEntries(pricingFields.map(([field]) => [field, saved ? (saved[field] / 100).toFixed(2) : '']))
@@ -188,6 +209,13 @@ function nameOf(row) { return row?.metadata?.name || row?.name || row?.orderSn |
 function phaseOf(row) { return row.status?.phase || row.status || row.spec?.order?.status || '—' }
 watch(section, load)
 watch(form, scheduleQuote, { deep: true })
+watch(() => form.value.kind, kind => {
+  if (kind === 'csm') {
+    if (!form.value.cpu) form.value.cpu = 2
+    if (!form.value.memoryGi) form.value.memoryGi = 4
+    if (!form.value.bandwidthMbps) form.value.bandwidthMbps = 5
+  }
+})
 onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; if (loggedIn.value) await load() } catch (e) { error.value = e.message } })
 </script>
 
@@ -202,21 +230,37 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; if
       <header><div><p class="eyebrow">容器云主机 / {{ title }}</p><h1>{{ title }}</h1></div><button v-if="loggedIn" class="light" @click="load">刷新</button></header>
       <p v-if="error" class="alert" role="alert">{{ error }}</p><p v-if="notice" class="notice" role="status">{{ notice }} <a v-if="payment?.ticket" :href="`https://ip.w7.cc/pay/${encodeURIComponent(payment.ticket)}?header=false&footer=false`" target="_blank" rel="noopener noreferrer">前往 W7 云支付 ↗</a></p>
       <section v-if="!loggedIn" class="panel"><h2>登录 CSM</h2><p class="hint">使用 W7Panel 账户授权后管理云主机。</p><button class="primary" @click="login">登录</button></section>
-      <template v-else><section v-if="section === 'purchase'" class="panel form-panel">
-        <p class="hint">创建订单后，资源将在云支付确认时生效。</p>
-        <div class="grid">
+      <template v-else><section v-if="section === 'purchase'" class="panel purchase-page">
+        <p class="hint">按资源规格和购买时长配置订单，支付确认后生效。</p>
+        <div class="purchase-meta">
           <label>资源类型<select v-model="form.kind"><option value="csm">云主机</option><option value="dataDisk">独立数据盘</option></select></label>
           <label>购买方式<select v-model="form.action"><option value="buy">购买</option><option value="renew">续费</option><option value="expand">扩容</option></select></label>
           <label>名称<input v-model.trim="form.name" placeholder="例如 my-host" /></label>
-          <label v-if="form.kind === 'csm' && form.action === 'buy'">系统模板<select v-model="form.templateName"><option value="">选择模板</option><option v-for="item in templates" :key="nameOf(item)" :value="nameOf(item)">{{ nameOf(item) }}</option></select></label>
-          <template v-if="form.action !== 'renew'">
-            <label v-if="form.kind === 'csm'">CPU 核数<input v-model.number="form.cpu" type="number" min="1" /></label>
-            <label v-if="form.kind === 'csm'">内存 GiB<input v-model.number="form.memoryGi" type="number" min="1" /></label>
-            <label>存储 GiB<input v-model.number="form.storageGi" type="number" min="1" /></label>
-            <label v-if="form.kind === 'csm'">带宽 Mbps<input v-model.number="form.bandwidthMbps" type="number" min="1" /></label>
-          </template>
-          <template v-if="form.action !== 'expand'"><label>时长<input v-model.number="form.quantity" type="number" min="1" /></label><label>单位<select v-model="form.unit"><option value="month">月</option><option value="year">年</option></select></label></template>
-        </div><p v-if="quoteLoading" class="hint" role="status">正在报价…</p><p v-else-if="quoteError" class="alert" role="alert">{{ quoteError }}</p><p v-else-if="quoteAmountCents !== null" class="quote" role="status">预估费用 <strong>¥{{ (quoteAmountCents / 100).toFixed(2) }}</strong></p><button class="primary" :disabled="quoteAmountCents === null || quoteLoading" @click="buy">创建订单</button>
+          <label v-if="form.kind === 'csm' && form.action === 'buy'">系统模板<select v-model="form.templateName" required><option value="">请选择系统模板</option><option v-for="item in templates" :key="nameOf(item)" :value="nameOf(item)">{{ nameOf(item) }}</option></select></label>
+        </div>
+        <p v-if="form.kind === 'csm' && form.action === 'buy' && !loading && !templates.length" class="alert" role="alert">暂无可用系统模板，请先创建系统模板。</p>
+        <div class="purchase-table">
+          <div class="purchase-row purchase-row-head"><span>名称</span><span>配置</span><span>价格</span></div>
+          <div v-for="item in visiblePurchaseResources" :key="item.field" class="purchase-row">
+            <span class="purchase-label">{{ item.label }}</span>
+            <div v-if="form.action !== 'renew'" class="purchase-control">
+              <input v-model.number="form[item.field]" type="range" min="1" :max="Math.max(item.max, Number(form[item.field]) || 1)" :aria-label="`${item.label}配置滑块`" />
+              <label class="purchase-number"><input v-model.number="form[item.field]" type="number" min="1" :aria-label="`${item.label}配置`" /><span>{{ item.unit }}</span></label>
+            </div>
+            <span v-else class="purchase-muted">沿用当前配置</span>
+            <span class="purchase-price">{{ linePrice(item) }}<small v-if="purchasePrices && form.action === 'buy'">¥{{ (purchasePrices[item.price] / 100).toFixed(2) }} / {{ item.unit }} / 月</small></span>
+          </div>
+        </div>
+        <div v-if="form.action !== 'expand'" class="purchase-duration">
+          <strong>购买时长</strong>
+          <div class="purchase-periods">
+            <button v-for="period in purchasePeriods" :key="`${period.quantity}-${period.unit}`" type="button" class="light" :class="{ chosen: form.quantity === period.quantity && form.unit === period.unit }" @click="form.quantity = period.quantity; form.unit = period.unit">{{ period.quantity }}{{ period.unit === 'year' ? '年' : '月' }}</button>
+          </div>
+          <div class="purchase-custom"><label>自定义时长<input v-model.number="form.quantity" type="number" min="1" :max="form.unit === 'year' ? 10 : 120" /></label><label>单位<select v-model="form.unit"><option value="month">月</option><option value="year">年</option></select></label></div>
+        </div>
+        <div class="purchase-total"><span>总价</span><strong v-if="quoteAmountCents !== null">¥{{ (quoteAmountCents / 100).toFixed(2) }}</strong><span v-else>—</span></div>
+        <p v-if="quoteLoading" class="hint" role="status">正在报价…</p><p v-else-if="quoteError" class="alert" role="alert">{{ quoteError }}</p>
+        <div class="purchase-actions"><button class="primary" :disabled="quoteAmountCents === null || quoteLoading || (form.kind === 'csm' && form.action === 'buy' && !form.templateName)" @click="buy">{{ form.action === 'renew' ? '续费' : form.action === 'expand' ? '扩容' : '购买' }}</button></div>
       </section>
       <section v-else-if="section === 'pricing'" class="panel form-panel">
         <p class="hint">设置各项资源的月单价；购买页按实际资源和时长向服务端获取报价。只有创始人可保存。</p>
@@ -277,4 +321,28 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; if
 
 .inline-form{display:flex;align-items:end;gap:8px;flex-wrap:wrap}.inline-form label{min-width:220px}.inline-form input{width:100%}.panel-head strong{color:#20304c}.table-wrap{overflow-x:auto}.table-wrap table{min-width:900px}.table-wrap td small{display:block;color:#8293a5;margin-top:4px}.table-wrap td.actions{white-space:nowrap}.actions button:disabled{opacity:.5;cursor:not-allowed}.detail .actions label{min-width:220px}
 .table-wrap td.actions{display:table-cell;text-align:right}.table-wrap th:last-child{text-align:right}
+.purchase-page{max-width:1020px;margin-inline:auto}
+.purchase-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-bottom:24px}
+.purchase-table{border:1px solid #dfe7ef;border-radius:8px;overflow:hidden}
+.purchase-row{display:grid;grid-template-columns:120px minmax(0,1fr) 190px;gap:18px;align-items:center;min-height:72px;padding:12px 18px;border-top:1px solid #edf1f5}
+.purchase-row-head{min-height:42px;border-top:0;background:#f6f9fc;color:#67809b;font-size:12px;font-weight:600}
+.purchase-label{font-weight:600;color:#20304c}
+.purchase-control{display:flex;align-items:center;gap:20px;min-width:0}
+.purchase-control input[type=range]{flex:1;min-width:80px;accent-color:#236488}
+.purchase-number{display:flex;flex-direction:row;align-items:center;gap:0;flex:none;border:1px solid #cad7e2;border-radius:6px;overflow:hidden}
+.purchase-number input{width:90px;border:0;border-radius:0;text-align:right}
+.purchase-number span{padding:0 10px;color:#63768b;background:#f6f9fc;align-self:stretch;display:flex;align-items:center}
+.purchase-price{color:#b75122;font-weight:600;text-align:right}
+.purchase-price small{display:block;margin-top:3px;color:#8293a5;font-size:11px;font-weight:400}
+.purchase-muted{color:#8293a5}
+.purchase-duration{padding:24px 0;border-bottom:1px solid #edf1f5}
+.purchase-duration strong{display:block;margin-bottom:14px;color:#20304c}
+.purchase-periods{display:flex;gap:8px;flex-wrap:wrap}
+.purchase-periods button.chosen{background:#236488;border-color:#236488;color:#fff}
+.purchase-custom{display:flex;gap:12px;margin-top:16px}
+.purchase-custom label:first-child{width:180px}.purchase-custom label:last-child{width:100px}
+.purchase-total{display:flex;justify-content:space-between;align-items:center;padding:22px 0;font-weight:600}
+.purchase-total strong{font-size:26px;color:#b75122}
+.purchase-actions{display:flex;justify-content:center}.purchase-actions .primary{min-width:160px}
+@media(max-width:700px){.purchase-meta{grid-template-columns:1fr}.purchase-row{grid-template-columns:70px minmax(0,1fr);gap:10px}.purchase-row-head span:last-child{display:none}.purchase-price{grid-column:2;text-align:left}.purchase-control{gap:8px}.purchase-number input{width:64px}.purchase-custom label:first-child{width:150px}}
 </style>
