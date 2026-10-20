@@ -569,7 +569,7 @@ func (s *Server) terminal(w http.ResponseWriter, r *http.Request) {
 	}
 	execURL := *base
 	execURL.Path = "/api/v1/namespaces/" + ns + "/pods/" + pod + "/exec"
-	execURL.RawQuery = url.Values{"container": {"host"}, "command": {"/bin/sh"}, "stdin": {"true"}, "stdout": {"true"}, "stderr": {"true"}, "tty": {"true"}}.Encode()
+	execURL.RawQuery = url.Values{"container": {"host"}, "command": {"/bin/sh", "-c", "TERM=xterm; export TERM; exec /bin/sh"}, "stdin": {"true"}, "stdout": {"true"}, "stderr": {"true"}, "tty": {"true"}}.Encode()
 	proxy := httputil.NewSingleHostReverseProxy(base)
 	if client.Transport != nil {
 		proxy.Transport = client.Transport

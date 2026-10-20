@@ -1,10 +1,11 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { api, items } from './api'
 import { finishLogin, startLogin } from './auth'
 import SystemTemplates from './SystemTemplates.vue'
 import UpgradeVersions from './UpgradeVersions.vue'
 import HostDetail from './HostDetail.vue'
+const TerminalModal = defineAsyncComponent(() => import('./TerminalModal.vue'))
 
 const tabs = [
   ['hosts', '主机'], ['templates', '系统模板'],
@@ -69,40 +70,12 @@ const appDrawerOpen = ref(false)
 const appSaving = ref(false)
 const appError = ref('')
 const terminalOpen = ref(false)
-const terminalText = ref('')
-let terminalSocket
-function openTerminal() {
-  const name = nameOf(selected.value)
-  const token = localStorage.getItem('csm-token')
-  if (!token) { error.value = '请先登录后打开终端'; return }
-  terminalSocket?.close()
-  const base = window.$wujie?.props?.url || window.location.origin
-  const url = new URL(`/csm-api/v1/csms/${encodeURIComponent(name)}/terminal`, base)
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-  terminalText.value = ''; terminalOpen.value = true
-  terminalSocket = new WebSocket(url, ['v4.channel.k8s.io', `bearer.${token}`])
-  terminalSocket.binaryType = 'arraybuffer'
-  terminalSocket.onmessage = event => {
-    const data = new Uint8Array(event.data)
-    if (data[0] === 1 || data[0] === 2) terminalText.value += new TextDecoder().decode(data.slice(1))
-    if (data[0] === 3) terminalText.value += '\n' + new TextDecoder().decode(data.slice(1))
-  }
-  terminalSocket.onerror = () => { error.value = '终端连接失败'; terminalOpen.value = false }
-  terminalSocket.onclose = () => { terminalText.value += '\n[连接已关闭]' }
-}
-function terminalKey(event) {
-  if (terminalSocket?.readyState !== WebSocket.OPEN) return
-  const key = event.key === 'Enter' ? '\r' : event.key === 'Backspace' ? '\x7f' : event.key.length === 1 ? event.key : ''
-  if (!key) return
-  event.preventDefault()
-  const data = new TextEncoder().encode(key)
-  terminalSocket.send(new Uint8Array([0, ...data]))
-}
+function openTerminal() { terminalOpen.value = true }
 const title = computed(() => section.value === 'purchase' ? '购买' : tabs.find(([id]) => id === section.value)?.[1] || '主机')
 const resource = { hosts: 'csms', templates: 'system-templates', preinstall: 'preinstall-executions', upgrade: 'upgrade-executions', orders: 'orders', disks: 'data-disks', apps: 'preinstall-applications', versions: 'upgrade-versions' }
 
 async function login() { try { await startLogin() } catch (e) { error.value = e.message } }
-function go(id) { if (id === 'apps') { templateTab.value = 'apps'; id = 'templates' } section.value = id; hostRouteName.value = ''; location.hash = id; selected.value = null; terminalSocket?.close(); terminalOpen.value = false; mobileMenuOpen.value = false }
+function go(id) { if (id === 'apps') { templateTab.value = 'apps'; id = 'templates' } section.value = id; hostRouteName.value = ''; location.hash = id; selected.value = null; terminalOpen.value = false; mobileMenuOpen.value = false }
 function orderForDisk(action, disk) {
   form.value = { kind: 'dataDisk', action, name: disk?.metadata?.name || '', templateName: '', cpu: 0, memoryGi: 0, storageGi: action === 'expand' ? Number(disk.spec?.storageGi || 0) + 10 : action === 'buy' ? 10 : 0, bandwidthMbps: 0, quantity: 1, unit: 'month' }
   go('purchase')
@@ -230,7 +203,7 @@ function syncHostRoute() {
   const name = hostNameFromHash()
   hostRouteName.value = name
   if (name) { const wasHost = section.value === 'hosts'; section.value = 'hosts'; if (!wasHost || nameOf(selected.value) !== name) { selected.value = null; loadHost(name) } }
-  else if (section.value === 'hosts') { selected.value = null; terminalSocket?.close(); terminalOpen.value = false }
+  else if (section.value === 'hosts') { selected.value = null; terminalOpen.value = false }
 }
 async function run(path, body) {
   error.value = ''; notice.value = ''; payment.value = null
@@ -280,7 +253,7 @@ watch(() => form.value.kind, kind => {
   }
 })
 onMounted(async () => { window.addEventListener('hashchange', syncHostRoute); try { if (await finishLogin()) loggedIn.value = true; sshHost.value = (await api('/auth/config')).sshHost || ''; if (loggedIn.value) { await load(); if (hostRouteName.value) await loadHost(hostRouteName.value) } } catch (e) { error.value = e.message } })
-onUnmounted(() => { window.removeEventListener('hashchange', syncHostRoute); terminalSocket?.close() })
+onUnmounted(() => { window.removeEventListener('hashchange', syncHostRoute) })
 </script>
 
 <template>
@@ -387,7 +360,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', syncHostRoute); ter
       <HostDetail v-if="section === 'hosts' && hostRouteName && selected" :host="selected" :versions="versions" :ssh-host="sshHost" :loading="hostLoading" @back="go('hosts')" @refresh="loadHost(hostRouteName)" @preinstall="run(`/csms/${encodeURIComponent(hostRouteName)}/preinstall`)" @upgrade="versionName => run(`/csms/${encodeURIComponent(hostRouteName)}/upgrade`, { versionName })" @terminal="openTerminal" @add-key="async (publicKey, done) => { if ((await run(`/csms/${encodeURIComponent(hostRouteName)}/ssh-keys`, { publicKey })) !== undefined) done() }" @add-jump-key="async (publicKey, done) => { if ((await run(`/csms/${encodeURIComponent(hostRouteName)}/jump-keys`, { publicKey })) !== undefined) done() }" />
       <section v-else-if="section === 'hosts' && hostRouteName && hostLoading" class="panel"><p class="hint">正在加载主机详情…</p></section>
       <section v-if="selected && section === 'disks'" class="panel detail"><div class="panel-head"><h2>{{ nameOf(selected) }}</h2><button class="text" @click="selected = null">关闭</button></div><dl><dt>容量</dt><dd>{{ selected.spec?.storageGi || 0 }} GiB</dd><dt>到期时间</dt><dd>{{ dateText(selected.spec?.expireTime) }}</dd><dt>PVC</dt><dd>{{ selected.status?.pvcName || '待创建' }}</dd><dt>挂载路径</dt><dd>{{ selected.spec?.attached ? selected.spec?.mountPath || '—' : '未挂载' }}</dd></dl><div class="actions" v-if="selected.spec?.paid"><template v-if="!selected.spec?.attached && selected.status?.phase === 'Available'"><label>目标主机<select v-model="mountTarget"><option value="">选择主机</option><option v-for="host in mountHosts.filter(host => host.spec?.paid)" :key="nameOf(host)" :value="nameOf(host)">{{ nameOf(host) }}</option></select></label><button class="light" :disabled="!mountTarget" @click="run(`/data-disks/${encodeURIComponent(nameOf(selected))}/mount`, { csmName: mountTarget })">挂载</button></template><button v-if="selected.spec?.attached" class="light" @click="unmountDisk(selected)">卸载</button></div></section>
-      <section v-if="terminalOpen" class="panel"><div class="panel-head"><h2>网页终端</h2><button class="text" @click="terminalSocket?.close(); terminalOpen = false">关闭</button></div><pre class="terminal" tabindex="0" @keydown="terminalKey">{{ terminalText || '连接中…' }}</pre><p class="hint">点击终端区域后输入命令。</p></section>
+      <TerminalModal v-if="hostRouteName" :visible="terminalOpen" :name="hostRouteName" @close="terminalOpen = false" />
       </template>
     </main>
   </div>
@@ -462,8 +435,6 @@ textarea { min-height: 90px; resize: vertical; }
 .detail .actions { margin-top: 16px; }
 .upgrade-form { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
 .upgrade-form label { min-width: 220px; }
-.terminal { min-height: 300px; padding: 16px; overflow: auto; background: #1d2129; color: #f2f3f5; font: 14px/1.6 ui-monospace, Consolas, monospace; white-space: pre-wrap; }
-.terminal:focus-visible { outline: 2px solid rgb(var(--primary-6, 22, 93, 255)); }
 @media (max-width: 720px) {
   .rail { flex-basis: 156px; }
   .brand { padding: 0 16px; }
