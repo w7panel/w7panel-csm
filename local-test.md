@@ -30,10 +30,20 @@ make run
 
 ## 验证 SSH
 
-在 CSM 主机详情分别添加跳板公钥和主机公钥；主机状态为 Ready 后，使用详情显示的主机域名连接。跳板认证和主机认证是两个独立步骤：
+以下命令都在发起 SSH 连接的客户端电脑上执行。若 `~/.ssh/csm-218` 已存在，跳过生成密钥，避免覆盖原有私钥；否则生成一对密钥：
 
 ```sh
+mkdir -p "$HOME/.ssh"
+ssh-keygen -t ed25519 -f "$HOME/.ssh/csm-218" -C csm-218
+cat "$HOME/.ssh/csm-218.pub"
+```
+
+把 `cat` 输出的**公钥**分别粘贴到目标 CSM 主机详情的“添加跳板公钥”和“添加主机公钥”。私钥 `~/.ssh/csm-218` 只留在客户端，不要上传或发送。然后在**同一个客户端终端**运行：
+
+```sh
+eval "$(ssh-agent -s)"
+ssh-add "$HOME/.ssh/csm-218"
 ssh -J jump@csm.fan.b2.sz.w7.com:30000 root@<主机详情中的域名>
 ```
 
-如使用非默认私钥文件，先用 `ssh-add ~/.ssh/csm-218` 将私钥加入本机 agent；若提示无法连接 agent，先运行 `eval "$(ssh-agent -s)"`。`ssh -i` 不会自动将私钥传给 `-J` 跳板。两个认证步骤各自匹配对应的公钥。首次连接时核对跳板与主机的 SSH 主机指纹；218 跳板当前指纹为 `SHA256:U6lUlqDAmopw6XEXUuyebmI493vJPZmszMkB437A2PM`。
+例如连接 `csm-admin/test2`，将最后一行换成 `ssh -J jump@csm.fan.b2.sz.w7.com:30000 root@test2-csm-admin-34e8a6d0f93d.fan.b2.sz.w7.com`。`ssh-agent` 只对当前终端生效；其他终端需重新加载私钥。`ssh -i` 不会自动将私钥传给 `-J` 跳板。首次连接时核对跳板主机指纹；218 跳板当前指纹为 `SHA256:U6lUlqDAmopw6XEXUuyebmI493vJPZmszMkB437A2PM`。
