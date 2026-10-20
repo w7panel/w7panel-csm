@@ -95,15 +95,14 @@ type UpgradeVersionList struct {
 	Items           []UpgradeVersion `json:"items"`
 }
 type UpgradeExecutionSpec struct {
-	CsmNamespace       string      `json:"csmNamespace"`
-	CsmName            string      `json:"csmName"`
-	ApprovedBy         string      `json:"approvedBy"`
-	SourceTemplateName string      `json:"sourceTemplateName"`
-	SourceTemplateHash string      `json:"sourceTemplateHash"`
-	TargetTemplateName string      `json:"targetTemplateName"`
-	TargetTemplateHash string      `json:"targetTemplateHash"`
-	VersionName        string      `json:"versionName"`
-	Steps              []ShellStep `json:"steps,omitempty"`
+	CsmNamespace       string `json:"csmNamespace"`
+	CsmName            string `json:"csmName"`
+	ApprovedBy         string `json:"approvedBy"`
+	SourceTemplateName string `json:"sourceTemplateName"`
+	SourceTemplateHash string `json:"sourceTemplateHash"`
+	TargetTemplateName string `json:"targetTemplateName"`
+	TargetTemplateHash string `json:"targetTemplateHash"`
+	VersionName        string `json:"versionName"`
 }
 type UpgradeExecution struct {
 	metav1.TypeMeta   `json:",inline"`

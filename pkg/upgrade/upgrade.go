@@ -19,11 +19,6 @@ func ValidateApproval(spec csm.UpgradeExecutionSpec) error {
 	if spec.SourceTemplateHash == spec.TargetTemplateHash {
 		return fmt.Errorf("target template hash must differ from source")
 	}
-	for _, step := range spec.Steps {
-		if step.Name == "" || strings.TrimSpace(step.Shell) == "" {
-			return fmt.Errorf("upgrade step name and shell are required")
-		}
-	}
 	return nil
 }
 

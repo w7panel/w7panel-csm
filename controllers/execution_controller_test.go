@@ -55,35 +55,6 @@ func TestRunStepsStopsAndRecordsFailure(t *testing.T) {
 	}
 }
 
-func TestUpgradeFailureKeepsHostTemplate(t *testing.T) {
-	scheme := runtime.NewScheme()
-	if err := csm.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	host := &csm.Csm{ObjectMeta: metav1.ObjectMeta{Name: "host", Namespace: "users"}, Spec: csm.CsmSpec{TemplateName: "old"}, Status: csm.CsmStatus{TemplateHash: "old-hash", Phase: "Ready"}}
-	target := &csm.SystemTemplate{ObjectMeta: metav1.ObjectMeta{Name: "new"}, Spec: csm.SystemTemplateSpec{Version: "2", Source: "official", Image: "ubuntu:2", Hash: "new-hash"}}
-	version := &csm.UpgradeVersion{ObjectMeta: metav1.ObjectMeta{Name: "v2"}, Spec: csm.UpgradeVersionSpec{TemplateName: "new", Version: "2"}}
-	execution := &csm.UpgradeExecution{ObjectMeta: metav1.ObjectMeta{Name: "upgrade-host"}, Spec: csm.UpgradeExecutionSpec{CsmNamespace: "users", CsmName: "host", ApprovedBy: "alice", SourceTemplateName: "old", SourceTemplateHash: "old-hash", TargetTemplateName: "new", TargetTemplateHash: "new-hash", VersionName: "v2", Steps: []csm.ShellStep{{Name: "step", Shell: "bad"}}}}
-	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(host, execution).WithObjects(host, target, version, execution).Build()
-	r := &UpgradeExecutionReconciler{Client: c, Runner: &testRunner{fail: "bad"}}
-	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: execution.Name}}); err != nil {
-		t.Fatal(err)
-	}
-	got := &csm.Csm{}
-	if err := c.Get(context.Background(), client.ObjectKeyFromObject(host), got); err != nil {
-		t.Fatal(err)
-	}
-	if got.Spec.TemplateName != "old" || got.Status.TemplateHash != "old-hash" {
-		t.Fatalf("failed upgrade changed host template: %+v", got)
-	}
-	if err := c.Get(context.Background(), client.ObjectKeyFromObject(execution), execution); err != nil {
-		t.Fatal(err)
-	}
-	if execution.Status.Phase != "failed" || !strings.Contains(execution.Status.Log, "partial output") {
-		t.Fatalf("failure log missing: %+v", execution.Status)
-	}
-}
-
 func TestUpgradeWaitsForReadyAndRollsBackFailure(t *testing.T) {
 	for _, outcome := range []string{"Ready", "Failed", "TimedOut"} {
 		t.Run(outcome, func(t *testing.T) {
@@ -94,9 +65,9 @@ func TestUpgradeWaitsForReadyAndRollsBackFailure(t *testing.T) {
 			host := &csm.Csm{ObjectMeta: metav1.ObjectMeta{Name: "host", Namespace: "users"}, Spec: csm.CsmSpec{TemplateName: "old"}, Status: csm.CsmStatus{TemplateHash: "old-hash", Phase: "Ready"}}
 			target := &csm.SystemTemplate{ObjectMeta: metav1.ObjectMeta{Name: "new"}, Spec: csm.SystemTemplateSpec{Version: "2", Source: "official", Image: "ubuntu:2", Hash: "new-hash"}}
 			version := &csm.UpgradeVersion{ObjectMeta: metav1.ObjectMeta{Name: "v2"}, Spec: csm.UpgradeVersionSpec{TemplateName: "new", Version: "2"}}
-			execution := &csm.UpgradeExecution{ObjectMeta: metav1.ObjectMeta{Name: "upgrade-host"}, Spec: csm.UpgradeExecutionSpec{CsmNamespace: "users", CsmName: "host", ApprovedBy: "alice", SourceTemplateName: "old", SourceTemplateHash: "old-hash", TargetTemplateName: "new", TargetTemplateHash: "new-hash", VersionName: "v2", Steps: []csm.ShellStep{{Name: "step", Shell: "good"}}}}
+			execution := &csm.UpgradeExecution{ObjectMeta: metav1.ObjectMeta{Name: "upgrade-host"}, Spec: csm.UpgradeExecutionSpec{CsmNamespace: "users", CsmName: "host", ApprovedBy: "alice", SourceTemplateName: "old", SourceTemplateHash: "old-hash", TargetTemplateName: "new", TargetTemplateHash: "new-hash", VersionName: "v2"}}
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(host, execution).WithObjects(host, target, version, execution).Build()
-			r := &UpgradeExecutionReconciler{Client: c, Runner: &testRunner{}}
+			r := &UpgradeExecutionReconciler{Client: c}
 			request := ctrl.Request{NamespacedName: types.NamespacedName{Name: execution.Name}}
 			if _, err := r.Reconcile(context.Background(), request); err != nil {
 				t.Fatal(err)

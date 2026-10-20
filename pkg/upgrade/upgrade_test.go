@@ -26,7 +26,7 @@ func TestNewExecutionRequiresApproval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if execution.Spec.SourceTemplateHash != "old-hash" || execution.Spec.TargetTemplateHash != target.Spec.Hash || len(execution.Spec.Steps) != 0 {
+	if execution.Spec.SourceTemplateHash != "old-hash" || execution.Spec.TargetTemplateHash != target.Spec.Hash {
 		t.Fatalf("unexpected upgrade snapshot: %+v", execution.Spec)
 	}
 }

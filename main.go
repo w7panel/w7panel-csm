@@ -196,7 +196,7 @@ func run() error {
 	if err := controllers.SetupPreinstallExecutionController(mgr, runner); err != nil {
 		return err
 	}
-	if err := controllers.SetupUpgradeExecutionController(mgr, runner); err != nil {
+	if err := controllers.SetupUpgradeExecutionController(mgr); err != nil {
 		return err
 	}
 

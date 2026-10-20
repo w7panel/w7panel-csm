@@ -21,14 +21,13 @@ type PreinstallExecutionReconciler struct {
 }
 type UpgradeExecutionReconciler struct {
 	client.Client
-	Runner execshell.Runner
 }
 
 func SetupPreinstallExecutionController(mgr ctrl.Manager, runner execshell.Runner) error {
 	return ctrl.NewControllerManagedBy(mgr).For(&csm.PreinstallExecution{}).Complete(&PreinstallExecutionReconciler{Client: mgr.GetClient(), Runner: runner})
 }
-func SetupUpgradeExecutionController(mgr ctrl.Manager, runner execshell.Runner) error {
-	return ctrl.NewControllerManagedBy(mgr).For(&csm.UpgradeExecution{}).Complete(&UpgradeExecutionReconciler{Client: mgr.GetClient(), Runner: runner})
+func SetupUpgradeExecutionController(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).For(&csm.UpgradeExecution{}).Complete(&UpgradeExecutionReconciler{Client: mgr.GetClient()})
 }
 
 func (r *PreinstallExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -87,7 +86,7 @@ func (r *UpgradeExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 	name, hash, phase := host.Spec.TemplateName, host.Status.TemplateHash, host.Status.Phase
-	if name == execution.Spec.TargetTemplateName && len(execution.Status.Completed) == len(execution.Spec.Steps) {
+	if name == execution.Spec.TargetTemplateName {
 		if phase == "Ready" && hash == execution.Spec.TargetTemplateHash {
 			execution.Status.Phase = "succeeded"
 			now := metav1.Now()
@@ -140,12 +139,6 @@ func (r *UpgradeExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		if version.Spec.TemplateName != target.Name {
 			return ctrl.Result{}, failUpgrade(ctx, r.Client, execution, "version targets another template")
 		}
-	}
-	if err := runSteps(ctx, r.Runner, execution.Spec.CsmNamespace, execution.Spec.CsmName, execution.Spec.Steps, &execution.Status, func() error { return r.Status().Update(ctx, execution) }); err != nil {
-		return ctrl.Result{}, err
-	}
-	if execution.Status.Phase == "failed" {
-		return ctrl.Result{}, nil
 	}
 	target := &csm.SystemTemplate{}
 	if err := r.Get(ctx, client.ObjectKey{Name: execution.Spec.TargetTemplateName}, target); err != nil {

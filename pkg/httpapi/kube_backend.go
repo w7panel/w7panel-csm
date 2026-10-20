@@ -144,6 +144,11 @@ func (b KubeBackend) Action(ctx context.Context, kind, namespace, name, action s
 		if json.Unmarshal(body, &input) != nil || !validName(input.Metadata.Name) || input.Spec == nil {
 			return nil, ErrConflict
 		}
+		if kind == "upgrade-versions" {
+			if _, hasPolicies := input.Spec["policies"]; hasPolicies {
+				return nil, ErrConflict
+			}
+		}
 		path, _ := b.path(kind, "", "")
 		resourceKind := map[string]string{"preinstall-applications": "PreinstallApplication", "upgrade-versions": "UpgradeVersion"}[kind]
 		return b.call(ctx, http.MethodPost, path, map[string]any{"apiVersion": "csm.w7.cc/v1alpha1", "kind": resourceKind, "metadata": map[string]string{"name": input.Metadata.Name}, "spec": input.Spec})

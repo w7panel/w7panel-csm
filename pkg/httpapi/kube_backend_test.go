@@ -110,6 +110,9 @@ func TestUpgradeWithoutPolicies(t *testing.T) {
 	defer server.Close()
 	b := KubeBackend{BaseURL: server.URL, Client: server.Client()}
 	ctx := context.WithValue(context.Background(), identityKey{}, Identity{Subject: "alice"})
+	if _, err := b.Action(ctx, "upgrade-versions", "", "", "create", json.RawMessage(`{"metadata":{"name":"newer"},"spec":{"templateName":"new","version":"2","policies":["legacy"]}}`)); !errors.Is(err, ErrConflict) {
+		t.Fatalf("policy input accepted: %v", err)
+	}
 	if _, err := b.Action(ctx, "csms", "tenant", "host", "upgrade", json.RawMessage(`{"versionName":"next"}`)); err != nil {
 		t.Fatal(err)
 	}
