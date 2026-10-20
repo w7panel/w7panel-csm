@@ -54,6 +54,10 @@ spec:
                 items:
                   type: string
                 type: array
+              jumpPublicKeys:
+                items:
+                  type: string
+                type: array
               storageClassName:
                 type: string
               systemDiskGi:
@@ -74,6 +78,8 @@ spec:
               sshPort:
                 format: int32
                 type: integer
+              sshHost:
+                type: string
               systemPVCName:
                 type: string
               templateHash:

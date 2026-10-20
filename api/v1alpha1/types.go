@@ -2,6 +2,8 @@
 package v1alpha1
 
 import (
+	"crypto/sha256"
+	"fmt"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -38,12 +40,14 @@ type CsmSpec struct {
 	CPU              string   `json:"cpu,omitempty"`
 	Memory           string   `json:"memory,omitempty"`
 	SSHPublicKeys    []string `json:"sshPublicKeys,omitempty"`
+	JumpPublicKeys   []string `json:"jumpPublicKeys,omitempty"`
 }
 
 type CsmStatus struct {
 	Phase         string `json:"phase,omitempty"`
 	SystemPVCName string `json:"systemPVCName,omitempty"`
 	SSHPort       int32  `json:"sshPort,omitempty"`
+	SSHHost       string `json:"sshHost,omitempty"`
 	TemplateHash  string `json:"templateHash,omitempty"`
 	Message       string `json:"message,omitempty"`
 }
@@ -93,7 +97,19 @@ func (in *Csm) DeepCopyObject() runtime.Object {
 	*out = *in
 	out.ObjectMeta = *in.ObjectMeta.DeepCopy()
 	out.Spec.SSHPublicKeys = append([]string(nil), in.Spec.SSHPublicKeys...)
+	out.Spec.JumpPublicKeys = append([]string(nil), in.Spec.JumpPublicKeys...)
 	return out
+}
+
+func SSHDomain(namespace, name, suffix string) string {
+	sum := sha256.Sum256([]byte(namespace + "/" + name))
+	if len(name) > 24 {
+		name = name[:24]
+	}
+	if len(namespace) > 24 {
+		namespace = namespace[:24]
+	}
+	return fmt.Sprintf("%s-%s-%x.%s", name, namespace, sum[:6], suffix)
 }
 func (in *CsmList) DeepCopyObject() runtime.Object {
 	out := new(CsmList)

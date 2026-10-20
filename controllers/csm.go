@@ -29,6 +29,8 @@ type CsmReconciler struct {
 	GatewayServiceName string
 	PortStart          int32
 	PortEnd            int32
+	JumpPort           int32
+	SSHDomainSuffix    string
 }
 
 func (r *CsmReconciler) setOwner(owner *api.Csm, obj client.Object) error {
@@ -124,9 +126,18 @@ func (r *CsmReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		}
 		return ctrl.Result{Requeue: true}, nil
 	}
-	port, err := r.ensurePort(ctx, host)
-	if err != nil {
-		return ctrl.Result{}, err
+	var port int32
+	if r.JumpPort != 0 {
+		if err := r.releasePort(ctx, host); err != nil {
+			return ctrl.Result{}, err
+		}
+		port = r.JumpPort
+	} else {
+		var err error
+		port, err = r.ensurePort(ctx, host)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 	disks := &api.DataDiskList{}
 	if err := r.List(ctx, disks, client.InNamespace(host.Namespace)); err != nil {
@@ -152,8 +163,10 @@ func (r *CsmReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	if err := r.ensureDeployment(ctx, host, dep); err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := r.ensureRoute(ctx, host); err != nil {
-		return ctrl.Result{}, err
+	if r.JumpPort == 0 {
+		if err := r.ensureRoute(ctx, host); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 	if err := r.ensureService(ctx, host, hostruntime.Service(host)); err != nil {
 		return ctrl.Result{}, err
@@ -180,6 +193,9 @@ func (r *CsmReconciler) hostStatus(ctx context.Context, h *api.Csm, phase, msg s
 	next := h.Status
 	next.Phase = phase
 	next.Message = msg
+	if r.JumpPort != 0 {
+		next.SSHHost = api.SSHDomain(h.Namespace, h.Name, r.SSHDomainSuffix)
+	}
 	if port != 0 {
 		next.SSHPort = port
 	} else if phase == "Expired" || phase == "Recycled" || phase == "PendingPayment" {

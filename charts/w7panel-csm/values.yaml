@@ -28,6 +28,11 @@ ssh:
   gatewayName: gateway
   gatewayServiceName: higress-gateway
   publicHost: csm.fan.b2.sz.w7.com
+  jumpEnabled: true
+  jumpPort: 30000
+  listenPort: 2222
+  domainSuffix: fan.b2.sz.w7.com
+  loadBalancerClass: io.cilium/node
   portStart: 30000
   portEnd: 30999
 terminal:

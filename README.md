@@ -15,7 +15,7 @@ testing. It uses the built UI in the main project. `make run` sets
 `MOCK_PAY=true`: orders are priced by CSM and immediately applied without
 calling W7 Cloud. Set monthly prices on 费用设置 before buying. This target
 explicitly permits HTTP OIDC endpoints and a local HTTP redirect URI.
-`make run` defaults to the `higress-system/higress` Gateway; override
+`make run` defaults to the `higress-system/gateway` Gateway; override
 `CSM_SSH_GATEWAY_NAMESPACE` and `CSM_SSH_GATEWAY_NAME` for another cluster.
 
 `make manifests` refreshes the host and data disk CRDs while preserving the
@@ -42,17 +42,16 @@ Additional Ubuntu, CentOS, or other Linux versions can be added as
 The sample manifest is in `config/samples/`.
 The deployed manager requires in-cluster Kubernetes credentials and Helm values for
 `oidc.discoveryURL`, `oidc.audience`, `oidc.clientID`, `oidc.redirectURI`,
-`ssh.gatewayNamespace`, `ssh.gatewayName`, `ssh.publicHost`,
-`ssh.portStart`, `ssh.portEnd`, `payment.productID`,
+`ssh.publicHost`, `ssh.domainSuffix`, `ssh.jumpPort`, `payment.productID`,
 `payment.callbackHost`.
-CSM adds a TCP listener to the configured Gateway and a TCPRoute to each host's
-ClusterIP Service. Install a Gateway implementation and the `v1alpha2` TCPRoute CRD
-first. The Gateway must expose the configured port range at `ssh.publicHost`;
-CSM publishes each host at `ssh.publicHost:<assigned port>`. Existing NodePort
-Services are converted to ClusterIP as hosts reconcile.
-When the Gateway's LoadBalancer Service needs an explicit port for each listener,
-set `ssh.gatewayServiceName` (for example, `higress-gateway`). CSM then adds and
-removes only its assigned SSH ports on that Service.
+With `ssh.jumpEnabled=true`, one LoadBalancer Service exposes the manager's SSH
+jump server at `ssh.publicHost:ssh.jumpPort`. Each host keeps an internal
+ClusterIP Service on port 22. Add the jump key and host key separately in the
+host detail page, then connect with
+`ssh -J jump@csm.fan.b2.sz.w7.com:30000 root@<host.status.sshHost>`.
+The jump server authenticates the key for the requested host and forwards only
+to that host's internal port 22. Existing per-host Gateway listeners and
+TCPRoutes are removed as hosts reconcile.
 By default, Discovery, issuer and JWKS URLs may use HTTP only on a cluster
 Service or loopback host; the browser authorization endpoint and redirect URI
 must use HTTPS. `CSM_OIDC_ALLOW_INSECURE_HTTP=true` permits HTTP for local

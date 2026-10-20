@@ -2,9 +2,10 @@
 import { ref } from 'vue'
 
 const props = defineProps({ host: { type: Object, required: true }, versions: { type: Array, required: true }, sshHost: { type: String, default: '' }, loading: Boolean })
-const emit = defineEmits(['back', 'refresh', 'preinstall', 'upgrade', 'terminal', 'add-key'])
+const emit = defineEmits(['back', 'refresh', 'preinstall', 'upgrade', 'terminal', 'add-key', 'add-jump-key'])
 const upgradeTarget = ref('')
 const publicKey = ref('')
+const jumpKey = ref('')
 const name = row => row?.metadata?.name || '—'
 const display = value => value === undefined || value === null || value === '' ? '—' : value
 const dateText = value => { const date = new Date(value); return value && !Number.isNaN(date.getTime()) ? date.toLocaleString('zh-CN', { hour12: false }) : '—' }
@@ -14,6 +15,10 @@ function upgrade() {
 function addKey() {
   if (!publicKey.value.trim()) return
   emit('add-key', publicKey.value.trim(), () => { publicKey.value = '' })
+}
+function addJumpKey() {
+  if (!jumpKey.value.trim()) return
+  emit('add-jump-key', jumpKey.value.trim(), () => { jumpKey.value = '' })
 }
 </script>
 
@@ -42,9 +47,11 @@ function addKey() {
     <div class="host-columns">
       <section class="host-section" aria-labelledby="host-connect-heading">
         <h2 id="host-connect-heading">连接与公钥</h2>
-        <dl class="host-facts"><div><dt>SSH 地址</dt><dd class="mono">{{ sshHost || '—' }}</dd></div><div><dt>SSH 端口</dt><dd>{{ display(host.status?.sshPort) }}</dd></div></dl>
-        <p v-if="sshHost && host.status?.sshPort" class="host-command mono">ssh -p {{ host.status.sshPort }} root@{{ sshHost }}</p>
-        <form class="host-key-form" @submit.prevent="addKey"><label>添加 SSH 公钥<textarea v-model="publicKey" required rows="3" placeholder="粘贴 ssh-ed25519 公钥" /></label><button class="light">添加到主机</button></form>
+        <dl class="host-facts"><div><dt>主机域名</dt><dd class="mono">{{ display(host.status?.sshHost) }}</dd></div><div><dt>跳板地址</dt><dd class="mono">{{ sshHost || '—' }}</dd></div><div><dt>跳板端口</dt><dd>{{ display(host.status?.sshPort) }}</dd></div></dl>
+        <p v-if="sshHost && host.status?.sshHost && host.status?.sshPort" class="host-command mono">ssh -J jump@{{ sshHost }}:{{ host.status.sshPort }} root@{{ host.status.sshHost }}</p>
+        <p v-else-if="sshHost && host.status?.sshPort" class="host-command mono">ssh -p {{ host.status.sshPort }} root@{{ sshHost }}</p>
+        <form class="host-key-form" @submit.prevent="addJumpKey"><label>添加跳板公钥<textarea v-model="jumpKey" required rows="3" placeholder="粘贴 ssh-ed25519 公钥" /></label><button class="light">添加到跳板</button></form>
+        <form class="host-key-form" @submit.prevent="addKey"><label>添加主机公钥<textarea v-model="publicKey" required rows="3" placeholder="粘贴 ssh-ed25519 公钥" /></label><button class="light">添加到主机</button></form>
       </section>
       <section class="host-section" aria-labelledby="host-operation-heading">
         <h2 id="host-operation-heading">主机操作</h2>

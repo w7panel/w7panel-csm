@@ -1,0 +1,20 @@
+{{- if .Values.ssh.jumpEnabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "w7panel-csm.fullname" . }}-ssh
+  labels:
+    {{- include "w7panel-csm.labels" . | nindent 4 }}
+spec:
+  type: LoadBalancer
+  {{- with .Values.ssh.loadBalancerClass }}
+  loadBalancerClass: {{ . | quote }}
+  {{- end }}
+  selector:
+    {{- include "w7panel-csm.labels" . | nindent 4 }}
+  ports:
+    - name: ssh-jump
+      port: {{ .Values.ssh.jumpPort }}
+      targetPort: ssh-jump
+      protocol: TCP
+{{- end }}

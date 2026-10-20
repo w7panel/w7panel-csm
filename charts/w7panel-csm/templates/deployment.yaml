@@ -50,6 +50,12 @@ spec:
               value: {{ .Values.ssh.gatewayServiceName | quote }}
             - name: CSM_SSH_PUBLIC_HOST
               value: {{ .Values.ssh.publicHost | quote }}
+            - name: CSM_SSH_JUMP_ADDR
+              value: {{ ternary (printf ":%v" .Values.ssh.listenPort) "" .Values.ssh.jumpEnabled | quote }}
+            - name: CSM_SSH_JUMP_PORT
+              value: {{ .Values.ssh.jumpPort | quote }}
+            - name: CSM_SSH_DOMAIN_SUFFIX
+              value: {{ .Values.ssh.domainSuffix | quote }}
             - name: CSM_SSH_PORT_START
               value: {{ .Values.ssh.portStart | quote }}
             - name: CSM_SSH_PORT_END
@@ -75,6 +81,10 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}
+            {{- if .Values.ssh.jumpEnabled }}
+            - name: ssh-jump
+              containerPort: {{ .Values.ssh.listenPort }}
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /healthz

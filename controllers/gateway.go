@@ -178,6 +178,7 @@ func (r *CsmReconciler) releasePort(ctx context.Context, host *api.Csm) error {
 		}
 	}
 	port := host.Status.SSHPort
+	removed := false
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		gw := &unstructured.Unstructured{}
 		gw.SetGroupVersionKind(gatewayGVK)
@@ -198,6 +199,7 @@ func (r *CsmReconciler) releasePort(ctx context.Context, host *api.Csm) error {
 				kept = append(kept, raw)
 			} else if p, ok := item["port"].(int64); ok {
 				port = int32(p)
+				removed = true
 			}
 		}
 		if len(kept) == len(listeners) {
@@ -210,6 +212,9 @@ func (r *CsmReconciler) releasePort(ctx context.Context, host *api.Csm) error {
 	})
 	if err != nil {
 		return err
+	}
+	if !removed {
+		return nil
 	}
 	return r.releaseGatewayServicePort(ctx, port)
 }

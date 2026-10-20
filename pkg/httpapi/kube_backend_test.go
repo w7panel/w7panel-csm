@@ -2,11 +2,16 @@ package httpapi
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"golang.org/x/crypto/ssh"
 )
 
 func TestMountSetsDefaultPath(t *testing.T) {
@@ -41,7 +46,8 @@ func TestAttachKeyUpdatesHost(t *testing.T) {
 	const key = "ssh-ed25519 YWJj local"
 	var saved struct {
 		Spec struct {
-			SSHPublicKeys []string `json:"sshPublicKeys"`
+			SSHPublicKeys  []string `json:"sshPublicKeys"`
+			JumpPublicKeys []string `json:"jumpPublicKeys"`
 		} `json:"spec"`
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -69,6 +75,22 @@ func TestAttachKeyUpdatesHost(t *testing.T) {
 	}
 	if len(saved.Spec.SSHPublicKeys) != 1 || saved.Spec.SSHPublicKeys[0] != key {
 		t.Fatalf("host SSH keys: %v", saved.Spec.SSHPublicKeys)
+	}
+	_, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := ssh.NewSignerFromKey(private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jumpKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey())))
+	body, _ := json.Marshal(map[string]string{"publicKey": jumpKey})
+	if _, err := b.Action(context.Background(), "csms", "tenant", "host", "jump-key", body); err != nil {
+		t.Fatal(err)
+	}
+	if len(saved.Spec.JumpPublicKeys) != 1 || saved.Spec.JumpPublicKeys[0] != jumpKey {
+		t.Fatalf("jump SSH keys: %v", saved.Spec.JumpPublicKeys)
 	}
 }
 

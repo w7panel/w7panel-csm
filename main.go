@@ -17,6 +17,7 @@ import (
 	"github.com/w7panel/w7panel-csm/pkg/httpapi"
 	"github.com/w7panel/w7panel-csm/pkg/integration"
 	"github.com/w7panel/w7panel-csm/pkg/order"
+	"github.com/w7panel/w7panel-csm/pkg/sshjump"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -118,6 +119,15 @@ func run() error {
 	if portStart < 1 || portEnd > 65535 || portStart > portEnd {
 		return fmt.Errorf("invalid SSH port range")
 	}
+	jumpAddr := os.Getenv("CSM_SSH_JUMP_ADDR")
+	jumpSuffix := os.Getenv("CSM_SSH_DOMAIN_SUFFIX")
+	var jumpPort int64
+	if jumpAddr != "" {
+		jumpPort, err = strconv.ParseInt(os.Getenv("CSM_SSH_JUMP_PORT"), 10, 32)
+		if err != nil || jumpPort < 1 || jumpPort > 65535 || len(validation.IsDNS1123Subdomain(jumpSuffix)) != 0 {
+			return fmt.Errorf("invalid SSH jump port or domain suffix")
+		}
+	}
 	uiRoot := os.Getenv("CSM_UI_ROOT")
 	if uiRoot == "" {
 		uiRoot = "/var/run/ko/ui/dist"
@@ -182,7 +192,7 @@ func run() error {
 	if err := controllers.EnsureOfficialSystemTemplate(context.Background(), mgr.GetClient()); err != nil {
 		return err
 	}
-	host := &controllers.CsmReconciler{Client: mgr.GetClient(), Scheme: scheme, GatewayNamespace: gatewayNamespace, GatewayName: gatewayName, GatewayServiceName: gatewayServiceName, PortStart: int32(portStart), PortEnd: int32(portEnd)}
+	host := &controllers.CsmReconciler{Client: mgr.GetClient(), Scheme: scheme, GatewayNamespace: gatewayNamespace, GatewayName: gatewayName, GatewayServiceName: gatewayServiceName, PortStart: int32(portStart), PortEnd: int32(portEnd), JumpPort: int32(jumpPort), SSHDomainSuffix: jumpSuffix}
 	if err := host.SetupWithManager(mgr); err != nil {
 		return err
 	}
@@ -229,6 +239,16 @@ func run() error {
 		return err
 	})); err != nil {
 		return err
+	}
+	if jumpAddr != "" {
+		signer, err := sshjump.LoadHostKey(context.Background(), kube, pricingNamespace)
+		if err != nil {
+			return err
+		}
+		jump := &sshjump.Server{Client: mgr.GetClient(), Suffix: jumpSuffix, Signer: signer}
+		if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error { return jump.Serve(ctx, jumpAddr) })); err != nil {
+			return err
+		}
 	}
 	return mgr.Start(ctrl.SetupSignalHandler())
 }

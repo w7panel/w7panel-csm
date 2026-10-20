@@ -78,6 +78,7 @@ func (s *Server) Handler() http.Handler {
 	route("POST", "/csms/{name}/upgrade", s.action("csms", "upgrade"))
 	route("GET", "/csms/{name}/terminal", s.terminal)
 	route("POST", "/csms/{name}/ssh-keys", s.action("csms", "ssh-key"))
+	route("POST", "/csms/{name}/jump-keys", s.action("csms", "jump-key"))
 	route("GET", "/system-templates", s.list("system-templates"))
 	route("GET", "/system-templates/{name}", s.get("system-templates"))
 	route("POST", "/system-templates", s.action("system-templates", "create"))

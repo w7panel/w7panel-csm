@@ -15,6 +15,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 )
 
 // KubeBackend is the runtime adapter for CSM's namespaced and cluster CRDs.
@@ -180,7 +182,9 @@ func (b KubeBackend) Action(ctx context.Context, kind, namespace, name, action s
 	case kind == "csms" && action == "upgrade":
 		return b.createExecution(ctx, namespace, name, "upgrade", body)
 	case kind == "csms" && action == "ssh-key":
-		return b.attachKey(ctx, namespace, name, body)
+		return b.attachKey(ctx, namespace, name, "sshPublicKeys", body)
+	case kind == "csms" && action == "jump-key":
+		return b.attachKey(ctx, namespace, name, "jumpPublicKeys", body)
 	}
 	return nil, ErrNotFound
 }
@@ -432,25 +436,30 @@ func validPublicKey(key string) bool {
 	_, err := base64.StdEncoding.DecodeString(parts[1])
 	return err == nil
 }
-func (b KubeBackend) attachKey(ctx context.Context, ns, name string, body json.RawMessage) (json.RawMessage, error) {
+func (b KubeBackend) attachKey(ctx context.Context, ns, name, field string, body json.RawMessage) (json.RawMessage, error) {
 	var req struct {
 		PublicKey string `json:"publicKey"`
 	}
 	if json.Unmarshal(body, &req) != nil || !validPublicKey(req.PublicKey) {
 		return nil, ErrConflict
 	}
+	if field == "jumpPublicKeys" {
+		if _, _, _, _, err := ssh.ParseAuthorizedKey([]byte(req.PublicKey)); err != nil {
+			return nil, ErrConflict
+		}
+	}
 	for i := 0; i < 5; i++ {
 		host, err := b.object(ctx, "csms", ns, name)
 		if err != nil {
 			return nil, err
 		}
-		keys, _ := host.Spec["sshPublicKeys"].([]any)
+		keys, _ := host.Spec[field].([]any)
 		for _, v := range keys {
 			if v == req.PublicKey {
 				return json.Marshal(host)
 			}
 		}
-		host.Spec["sshPublicKeys"] = append(keys, req.PublicKey)
+		host.Spec[field] = append(keys, req.PublicKey)
 		data, err := b.update(ctx, "csms", ns, name, host)
 		if errors.Is(err, ErrConflict) {
 			continue
