@@ -5,6 +5,9 @@ metadata:
   name: {{ include "w7panel-csm.fullname" . }}
   labels:
     {{- include "w7panel-csm.labels" . | nindent 4 }}
+  annotations:
+    cert-manager.io/cluster-issuer: w7-letsencrypt-prod
+    cert-manager.io/renew-before: 30m
 spec:
   ingressClassName: {{ .Values.ingress.className | quote }}
   rules:
