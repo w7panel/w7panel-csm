@@ -78,6 +78,31 @@ func TestPaymentRequiresMatchingCloudOrderAndIsIdempotent(t *testing.T) {
 		t.Fatalf("cross tenant: %v", err)
 	}
 }
+
+func TestMockPaymentAppliesImmediately(t *testing.T) {
+	store := &fakeStore{}
+	req := Request{Kind: "csm", Action: "buy", Namespace: "csm-alice", Name: "host", TemplateName: "ubuntu", CPU: 2, MemoryGi: 4, StorageGi: 40, BandwidthMbps: 5, Quantity: 1, Unit: "month"}
+	quote := func(context.Context, Request) (int64, string, url.Values, error) {
+		return 1200, "", url.Values{"hour": {"720"}, "cpu": {"2"}, "memory": {"4"}, "storage": {"40"}, "bandwidth": {"5"}}, nil
+	}
+	svc := Service{Gateway: MockGateway{Quote: quote}, Store: store, AutoConfirm: true}
+	record, err := svc.Create(t.Context(), req)
+	if err != nil || record.Status != "paid" || record.OrderSn == "" || record.AmountCents != 1200 || record.Ticket != "" || store.applied != 1 {
+		t.Fatalf("mock order = %+v, applied = %d, err = %v", record, store.applied, err)
+	}
+	if _, err := svc.Refresh(t.Context(), req.Namespace, record.OrderSn); err != nil || store.applied != 1 {
+		t.Fatalf("duplicate confirmation applied %d times: %v", store.applied, err)
+	}
+	if _, err := (MockGateway{}).Lookup(t.Context(), Record{Payment: Payment{OrderSn: "real-order", NeedPay: true}}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("real order accepted by mock gateway: %v", err)
+	}
+	store = &fakeStore{}
+	svc.Store = store
+	svc.Gateway = MockGateway{}
+	if _, err := svc.Create(t.Context(), req); !errors.Is(err, ErrPricingMissing) || store.applied != 0 {
+		t.Fatalf("missing quote applied order: %v", err)
+	}
+}
 func TestApplySpecExpansionAndRenewal(t *testing.T) {
 	spec := map[string]any{"paid": true, "cpu": "2", "memory": "4Gi", "systemDiskGi": int64(40), "bandwidthMbps": int64(5), "expireTime": "2030-01-01T00:00:00Z"}
 	if err := applySpec(spec, Record{Request: Request{Kind: "csm", Action: "expand", CPU: 1, MemoryGi: 4, StorageGi: 40, BandwidthMbps: 5}}); !errors.Is(err, ErrInvalid) {

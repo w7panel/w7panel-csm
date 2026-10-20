@@ -29,11 +29,10 @@ build: prepare-go-cache
 	$(GO_ENV) go build -buildvcs=false -o bin/$(APP_NAME) .
 
 run:
-	CSM_OIDC_ALLOW_INSECURE_HTTP=true \
+	MOCK_PAY=true CSM_OIDC_ALLOW_INSECURE_HTTP=true \
 	OIDC_DISCOVERY_URL="http://218.23.2.48:9090/panel-api/v1/oidc/.well-known/openid-configuration" \
 	OIDC_AUDIENCE=default CSM_OIDC_CLIENT_ID=default CSM_OIDC_REDIRECT_URI=http://172.16.1.3:8082/callback \
-	CSM_PAYMENT_PRODUCT_ID=17057 CSM_PAYMENT_CALLBACK_HOST=localhost \
-	POD_NAMESPACE=default CSM_PAYMENT_CREDENTIAL_NAMESPACE=default \
+	POD_NAMESPACE=default \
 	CSM_SSH_GATEWAY_NAMESPACE="$(CSM_SSH_GATEWAY_NAMESPACE)" CSM_SSH_GATEWAY_NAME="$(CSM_SSH_GATEWAY_NAME)" \
 	CSM_SSH_PORT_START=30000 CSM_SSH_PORT_END=30999 \
 	CSM_UI_ROOT="$(HOME)/workspace/ai/w7panel-csm/ui/dist" \

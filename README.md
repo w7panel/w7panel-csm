@@ -11,10 +11,10 @@ make build
 ```
 
 `make run` uses `$HOME/.kube/218.config` and the `default` OIDC client for local
-testing. It uses the built UI in the main project and product ID 17057 from
-W7 Cloud's prepare endpoint. The callback host is `localhost`, so payment callbacks
-will not work. This target explicitly permits HTTP OIDC endpoints and a local
-HTTP redirect URI.
+testing. It uses the built UI in the main project. `make run` sets
+`MOCK_PAY=true`: orders are priced by CSM and immediately applied without
+calling W7 Cloud. Set monthly prices on 费用设置 before buying. This target
+explicitly permits HTTP OIDC endpoints and a local HTTP redirect URI.
 `make run` defaults to the `higress-system/higress` Gateway; override
 `CSM_SSH_GATEWAY_NAMESPACE` and `CSM_SSH_GATEWAY_NAME` for another cluster.
 
@@ -64,6 +64,8 @@ Set `payment.credentialNamespace` to the namespace containing the existing
 each account's `thirdparty_cd_token`, `cd_token_expire_time`, `cluster_id` and
 `userinfo`, plus the site AppID from the existing License. The W7 gateway checks
 payment status before `KubeStore` applies a Csm or DataDisk change.
+For local simulation, set `MOCK_PAY=true` (Helm: `payment.mockPay=true`). It
+creates a local order and immediately marks it paid; the chart defaults to false.
 
 The UI can call `GET /csm-api/v1/auth/config` for the OIDC authorization URL,
 client ID and fixed redirect URI. After a PKCE code flow, it sends `code`,

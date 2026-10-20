@@ -69,8 +69,9 @@ type Store interface {
 }
 
 type Service struct {
-	Gateway Gateway
-	Store   Store
+	Gateway     Gateway
+	Store       Store
+	AutoConfirm bool
 }
 
 var ErrInvalid = errors.New("invalid order")
@@ -93,6 +94,9 @@ func (s Service) Create(ctx context.Context, req Request) (Record, error) {
 	record := Record{Request: req, Payment: payment, Status: "pending", CreatedAt: time.Now().UTC()}
 	if err := s.Store.SavePending(ctx, record); err != nil {
 		return Record{}, err
+	}
+	if s.AutoConfirm {
+		return s.Refresh(ctx, req.Namespace, payment.OrderSn)
 	}
 	return record, nil
 }

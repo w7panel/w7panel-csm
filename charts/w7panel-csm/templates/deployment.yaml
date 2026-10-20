@@ -50,6 +50,8 @@ spec:
               value: {{ .Values.ssh.portEnd | quote }}
             - name: CSM_PAYMENT_PRODUCT_ID
               value: {{ .Values.payment.productID | quote }}
+            - name: MOCK_PAY
+              value: {{ .Values.payment.mockPay | quote }}
             - name: CSM_PAYMENT_CALLBACK_HOST
               value: {{ .Values.payment.callbackHost | quote }}
             - name: CSM_PAYMENT_CREDENTIAL_NAMESPACE

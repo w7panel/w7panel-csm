@@ -74,24 +74,21 @@ func run() error {
 	if len(validation.IsDNS1123Label(gatewayNamespace)) != 0 || len(validation.IsDNS1123Label(gatewayName)) != 0 {
 		return fmt.Errorf("SSH Gateway namespace and name must be DNS labels")
 	}
-	productID, err := required("CSM_PAYMENT_PRODUCT_ID")
-	if err != nil {
-		return err
-	}
-	callbackHost, err := required("CSM_PAYMENT_CALLBACK_HOST")
-	if err != nil {
-		return err
-	}
+	mockPay := os.Getenv("MOCK_PAY") == "true"
+	productID := os.Getenv("CSM_PAYMENT_PRODUCT_ID")
+	callbackHost := os.Getenv("CSM_PAYMENT_CALLBACK_HOST")
 	pricingNamespace, err := required("POD_NAMESPACE")
 	if err != nil {
 		return err
 	}
-	credentialNamespace, err := required("CSM_PAYMENT_CREDENTIAL_NAMESPACE")
-	if err != nil {
-		return err
-	}
-	if len(validation.IsDNS1123Label(credentialNamespace)) != 0 {
-		return fmt.Errorf("CSM_PAYMENT_CREDENTIAL_NAMESPACE must be a DNS label")
+	credentialNamespace := os.Getenv("CSM_PAYMENT_CREDENTIAL_NAMESPACE")
+	if !mockPay {
+		if productID == "" || callbackHost == "" || credentialNamespace == "" {
+			return fmt.Errorf("CSM_PAYMENT_PRODUCT_ID, CSM_PAYMENT_CALLBACK_HOST and CSM_PAYMENT_CREDENTIAL_NAMESPACE are required")
+		}
+		if len(validation.IsDNS1123Label(credentialNamespace)) != 0 {
+			return fmt.Errorf("CSM_PAYMENT_CREDENTIAL_NAMESPACE must be a DNS label")
+		}
 	}
 	terminalOrigin := os.Getenv("CSM_TERMINAL_ALLOWED_ORIGIN")
 	if terminalOrigin != "" {
@@ -100,9 +97,11 @@ func run() error {
 			return fmt.Errorf("CSM_TERMINAL_ALLOWED_ORIGIN must be an HTTPS origin")
 		}
 	}
-	callbackURL, err := url.Parse("https://" + callbackHost)
-	if err != nil || callbackURL.Hostname() == "" || callbackURL.Path != "" || callbackURL.RawQuery != "" || callbackURL.User != nil {
-		return fmt.Errorf("CSM_PAYMENT_CALLBACK_HOST must be a hostname")
+	if !mockPay {
+		callbackURL, err := url.Parse("https://" + callbackHost)
+		if err != nil || callbackURL.Hostname() == "" || callbackURL.Path != "" || callbackURL.RawQuery != "" || callbackURL.User != nil {
+			return fmt.Errorf("CSM_PAYMENT_CALLBACK_HOST must be a hostname")
+		}
 	}
 	portStart, err := strconv.ParseInt(os.Getenv("CSM_SSH_PORT_START"), 10, 32)
 	if err != nil {
@@ -199,8 +198,11 @@ func run() error {
 	backend := httpapi.KubeBackend{BaseURL: cfg.Host, Token: cfg.BearerToken, Client: kubeHTTP}
 	store := order.KubeStore{BaseURL: cfg.Host, Token: cfg.BearerToken, Client: kubeHTTP}
 	pricing := order.KubePricing{Kube: kube, Store: store, Namespace: pricingNamespace, ProductID: productID}
-	gateway := order.W7Gateway{NotifyURL: "https://" + callbackHost + httpapi.Prefix + "/order/notify", Credential: integration.AccountCredential(kube, resources, credentialNamespace), Quote: pricing.Quote}
-	server := httpapi.NewServer(authenticator.Authenticate, backend, order.Service{Gateway: gateway, Store: store}, uiRoot)
+	var gateway order.Gateway = order.W7Gateway{NotifyURL: "https://" + callbackHost + httpapi.Prefix + "/order/notify", Credential: integration.AccountCredential(kube, resources, credentialNamespace), Quote: pricing.Quote}
+	if mockPay {
+		gateway = order.MockGateway{Quote: pricing.Quote}
+	}
+	server := httpapi.NewServer(authenticator.Authenticate, backend, order.Service{Gateway: gateway, Store: store, AutoConfirm: mockPay}, uiRoot)
 	server.Pricing = pricing
 	server.KubeURL, server.KubeToken, server.KubeClient = cfg.Host, cfg.BearerToken, kubeHTTP
 	addr := os.Getenv("CSM_HTTP_ADDR")

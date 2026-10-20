@@ -184,7 +184,7 @@ async function run(path, body) {
   error.value = ''; notice.value = ''; payment.value = null
   try {
     const result = await api(path, { method: 'POST', body: JSON.stringify(body || {}) })
-    notice.value = result?.orderSn ? `订单 ${result.orderSn} 已创建，支付确认后生效。` : '操作已提交。'
+    notice.value = result?.status === 'paid' ? `订单 ${result.orderSn} 已支付，资源正在生效。` : result?.orderSn ? `订单 ${result.orderSn} 已创建，支付确认后生效。` : '操作已提交。'
     if (result?.ticket) payment.value = result
     if (section.value === 'disks') selected.value = null
     await load()
