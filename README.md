@@ -59,9 +59,10 @@ HTTPS authorization endpoint exposed to browsers. Its path must match discovery.
 The founder sets CPU, memory, storage, and bandwidth monthly prices on the
 费用设置 page. CSM calculates quotes on the server; an unset price blocks orders.
 
-Each tenant namespace needs a Secret named by `payment.credentialSecretName`
-(default `csm-w7-order`) containing `account`, `appId`, `clusterId`, and either
-`token` or `openId`. Optional `expiresAt` uses RFC3339. The W7 gateway checks
+Set `payment.credentialNamespace` to the namespace containing the existing
+`<account>.w7-config` Secrets (defaults to the CSM release namespace). CSM reads
+each account's `thirdparty_cd_token`, `cd_token_expire_time`, `cluster_id` and
+`userinfo`, plus the site AppID from the existing License. The W7 gateway checks
 payment status before `KubeStore` applies a Csm or DataDisk change.
 
 The UI can call `GET /csm-api/v1/auth/config` for the OIDC authorization URL,

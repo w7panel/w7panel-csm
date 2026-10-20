@@ -14,33 +14,76 @@ import (
 
 	"github.com/w7panel/w7panel-csm/pkg/order"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 )
 
-// SecretCredential reads the tenant's real W7 account credential from its namespace.
-// Secret csm-w7-order has account, appId, clusterId, token, openId and expiresAt keys.
-func SecretCredential(kube kubernetes.Interface, secretName string) func(context.Context, string) (order.W7Credential, error) {
+// AccountCredential reads the existing W7 account and site license credentials.
+func AccountCredential(kube kubernetes.Interface, resources dynamic.Interface, credentialNamespace string) func(context.Context, string) (order.W7Credential, error) {
 	return func(ctx context.Context, namespace string) (order.W7Credential, error) {
-		secret, err := kube.CoreV1().Secrets(namespace).Get(ctx, secretName, metav1.GetOptions{})
+		if !strings.HasPrefix(namespace, "csm-") || strings.TrimPrefix(namespace, "csm-") == "" {
+			return order.W7Credential{}, fmt.Errorf("invalid CSM account namespace")
+		}
+		account := strings.TrimPrefix(namespace, "csm-")
+		secret, err := kube.CoreV1().Secrets(credentialNamespace).Get(ctx, account+".w7-config", metav1.GetOptions{})
 		if err != nil {
 			return order.W7Credential{}, err
 		}
 		get := func(key string) string { return string(secret.Data[key]) }
-		credential := order.W7Credential{Token: get("token"), Account: get("account"), AppID: get("appId"), ClusterID: get("clusterId"), OpenID: get("openId")}
-		if credential.Account == "" || credential.AppID == "" || credential.ClusterID == "" || (credential.Token == "" && credential.OpenID == "") {
-			return credential, fmt.Errorf("tenant W7 order secret is incomplete")
+		appID, err := siteAppID(ctx, kube, resources)
+		if err != nil {
+			return order.W7Credential{}, err
 		}
-		if !strings.HasPrefix(namespace, "csm-") || credential.Account != strings.TrimPrefix(namespace, "csm-") {
-			return credential, fmt.Errorf("tenant W7 account does not match namespace")
+		credential := order.W7Credential{Token: get("thirdparty_cd_token"), Account: account, AppID: appID, ClusterID: get("cluster_id")}
+		var user struct {
+			OpenID string `json:"open_id"`
 		}
-		if raw := get("expiresAt"); raw != "" {
-			credential.ExpiresAt, err = time.Parse(time.RFC3339, raw)
-			if err != nil {
-				return credential, fmt.Errorf("invalid W7 token expiry: %w", err)
+		if raw := secret.Data["userinfo"]; len(raw) > 0 {
+			if err := json.Unmarshal(raw, &user); err != nil {
+				return order.W7Credential{}, fmt.Errorf("invalid W7 account userinfo: %w", err)
 			}
+		}
+		credential.OpenID = user.OpenID
+		if raw := get("cd_token_expire_time"); raw != "" {
+			seconds, err := strconv.ParseInt(raw, 10, 64)
+			if err != nil {
+				return order.W7Credential{}, fmt.Errorf("invalid W7 token expiry: %w", err)
+			}
+			credential.ExpiresAt = time.Unix(seconds, 0)
+		}
+		if credential.AppID == "" || (credential.Token == "" && credential.OpenID == "") {
+			return order.W7Credential{}, fmt.Errorf("W7 account credential is incomplete")
 		}
 		return credential, nil
 	}
+}
+
+var licenseGVR = schema.GroupVersionResource{Group: "w7panel.w7.com", Version: "v1alpha1", Resource: "licenses"}
+var userGVR = schema.GroupVersionResource{Group: "w7panel.w7.com", Version: "v1alpha1", Resource: "users"}
+
+func siteAppID(ctx context.Context, kube kubernetes.Interface, resources dynamic.Interface) (string, error) {
+	if license, err := resources.Resource(licenseGVR).Get(ctx, "license", metav1.GetOptions{}); err == nil {
+		if appID, _, _ := unstructured.NestedString(license.Object, "spec", "appId"); appID != "" {
+			return appID, nil
+		}
+	}
+	if users, err := resources.Resource(userGVR).List(ctx, metav1.ListOptions{}); err == nil {
+		for i := range users.Items {
+			if appID, _, _ := unstructured.NestedString(users.Items[i].Object, "spec", "license", "appId"); appID != "" {
+				return appID, nil
+			}
+		}
+	}
+	license, err := kube.CoreV1().Secrets("kube-system").Get(ctx, "license", metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("W7 site license is unavailable: %w", err)
+	}
+	if appID := string(license.Data["appId"]); appID != "" {
+		return appID, nil
+	}
+	return "", fmt.Errorf("W7 site license has no appId")
 }
 
 // RemoteQuote calls a trusted server-side pricing service; request bodies contain no price.

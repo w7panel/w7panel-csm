@@ -33,4 +33,4 @@ terminal:
 payment:
   productID: ""
   callbackHost: ""
-  credentialSecretName: csm-w7-order
+  credentialNamespace: ""

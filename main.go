@@ -23,6 +23,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -85,12 +86,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	credentialSecretName, err := required("CSM_PAYMENT_CREDENTIAL_SECRET_NAME")
+	credentialNamespace, err := required("CSM_PAYMENT_CREDENTIAL_NAMESPACE")
 	if err != nil {
 		return err
 	}
-	if len(validation.IsDNS1123Subdomain(credentialSecretName)) != 0 {
-		return fmt.Errorf("CSM_PAYMENT_CREDENTIAL_SECRET_NAME must be a DNS subdomain")
+	if len(validation.IsDNS1123Label(credentialNamespace)) != 0 {
+		return fmt.Errorf("CSM_PAYMENT_CREDENTIAL_NAMESPACE must be a DNS label")
 	}
 	terminalOrigin := os.Getenv("CSM_TERMINAL_ALLOWED_ORIGIN")
 	if terminalOrigin != "" {
@@ -134,6 +135,10 @@ func run() error {
 		return fmt.Errorf("Kubernetes projected service account token file is required")
 	}
 	kube, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return err
+	}
+	resources, err := dynamic.NewForConfig(cfg)
 	if err != nil {
 		return err
 	}
@@ -194,7 +199,7 @@ func run() error {
 	backend := httpapi.KubeBackend{BaseURL: cfg.Host, Token: cfg.BearerToken, Client: kubeHTTP}
 	store := order.KubeStore{BaseURL: cfg.Host, Token: cfg.BearerToken, Client: kubeHTTP}
 	pricing := order.KubePricing{Kube: kube, Store: store, Namespace: pricingNamespace, ProductID: productID}
-	gateway := order.W7Gateway{NotifyURL: "https://" + callbackHost + httpapi.Prefix + "/order/notify", Credential: integration.SecretCredential(kube, credentialSecretName), Quote: pricing.Quote}
+	gateway := order.W7Gateway{NotifyURL: "https://" + callbackHost + httpapi.Prefix + "/order/notify", Credential: integration.AccountCredential(kube, resources, credentialNamespace), Quote: pricing.Quote}
 	server := httpapi.NewServer(authenticator.Authenticate, backend, order.Service{Gateway: gateway, Store: store}, uiRoot)
 	server.Pricing = pricing
 	server.KubeURL, server.KubeToken, server.KubeClient = cfg.Host, cfg.BearerToken, kubeHTTP
