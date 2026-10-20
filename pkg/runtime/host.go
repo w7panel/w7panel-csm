@@ -85,7 +85,7 @@ exec /sbin/init`}
 	return &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: host.Name, Namespace: host.Namespace}, Spec: appsv1.DeploymentSpec{Replicas: &replicas, Selector: &metav1.LabelSelector{MatchLabels: labels}, Strategy: appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType}, Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels, Annotations: annotations}, Spec: corev1.PodSpec{RuntimeClassName: ptr("sysbox-runc"), Containers: []corev1.Container{container}, Volumes: volumes}}}}, nil
 }
 
-func Service(host *api.Csm, nodePort int32) *corev1.Service {
-	return &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: host.Name, Namespace: host.Namespace}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeNodePort, Selector: map[string]string{"csm.w7.cc/host": host.Name}, Ports: []corev1.ServicePort{{Name: "ssh", Port: 22, TargetPort: intstr.FromInt32(2222), NodePort: nodePort}}}}
+func Service(host *api.Csm) *corev1.Service {
+	return &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: host.Name, Namespace: host.Namespace}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP, Selector: map[string]string{"csm.w7.cc/host": host.Name}, Ports: []corev1.ServicePort{{Name: "ssh", Port: 22, TargetPort: intstr.FromInt32(2222)}}}}
 }
 func ptr(s string) *string { return &s }

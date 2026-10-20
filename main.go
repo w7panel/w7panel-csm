@@ -62,6 +62,17 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	gatewayNamespace, err := required("CSM_SSH_GATEWAY_NAMESPACE")
+	if err != nil {
+		return err
+	}
+	gatewayName, err := required("CSM_SSH_GATEWAY_NAME")
+	if err != nil {
+		return err
+	}
+	if len(validation.IsDNS1123Label(gatewayNamespace)) != 0 || len(validation.IsDNS1123Label(gatewayName)) != 0 {
+		return fmt.Errorf("SSH Gateway namespace and name must be DNS labels")
+	}
 	productID, err := required("CSM_PAYMENT_PRODUCT_ID")
 	if err != nil {
 		return err
@@ -162,7 +173,7 @@ func run() error {
 	if err := controllers.EnsureOfficialSystemTemplate(context.Background(), mgr.GetClient()); err != nil {
 		return err
 	}
-	host := &controllers.CsmReconciler{Client: mgr.GetClient(), Scheme: scheme, PortStart: int32(portStart), PortEnd: int32(portEnd)}
+	host := &controllers.CsmReconciler{Client: mgr.GetClient(), Scheme: scheme, GatewayNamespace: gatewayNamespace, GatewayName: gatewayName, PortStart: int32(portStart), PortEnd: int32(portEnd)}
 	if err := host.SetupWithManager(mgr); err != nil {
 		return err
 	}

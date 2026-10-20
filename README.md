@@ -15,6 +15,8 @@ testing. It uses the built UI in the main project and product ID 17057 from
 CKM's prepare endpoint. The callback host is `localhost`, so payment callbacks
 will not work. This target explicitly permits HTTP OIDC endpoints and a local
 HTTP redirect URI.
+Pass `CSM_SSH_GATEWAY_NAMESPACE` and `CSM_SSH_GATEWAY_NAME` to `make run` for
+the Gateway available in that cluster.
 
 `make manifests` refreshes the host and data disk CRDs while preserving the
 cluster-scoped template, preinstall, and upgrade CRDs. Use `make docker-build`
@@ -38,12 +40,16 @@ Additional Ubuntu, CentOS, or other Linux versions can be added as
 `SystemTemplate` resources with systemd-ready images. Each image must provide
 `/sbin/init`, `ssh-keygen`, `/usr/sbin/sshd`, and an enabled SSH service.
 The sample manifest is in `config/samples/`.
-The manager requires in-cluster Kubernetes credentials and the Helm values for
+The deployed manager requires in-cluster Kubernetes credentials and Helm values for
 `oidc.discoveryURL`, `oidc.audience`, `oidc.clientID`, `oidc.redirectURI`,
-`ssh.publicHost`, `ssh.portStart`, `ssh.portEnd`, `payment.productID`,
+`ssh.gatewayNamespace`, `ssh.gatewayName`, `ssh.publicHost`,
+`ssh.portStart`, `ssh.portEnd`, `payment.productID`,
 `payment.callbackHost`.
-The SSH port pool must be inside the cluster's NodePort range. CSM creates a
-NodePort Service for each host and publishes SSH at `ssh.publicHost:<assigned port>`.
+CSM adds a TCP listener to the configured Gateway and a TCPRoute to each host's
+ClusterIP Service. Install a Gateway implementation and the `v1alpha2` TCPRoute CRD
+first. The Gateway must expose the configured port range at `ssh.publicHost`;
+CSM publishes each host at `ssh.publicHost:<assigned port>`. Existing NodePort
+Services are converted to ClusterIP as hosts reconcile.
 By default, Discovery, issuer and JWKS URLs may use HTTP only on a cluster
 Service or loopback host; the browser authorization endpoint and redirect URI
 must use HTTPS. `CSM_OIDC_ALLOW_INSECURE_HTTP=true` permits HTTP for local

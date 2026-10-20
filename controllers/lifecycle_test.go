@@ -10,6 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -87,10 +88,15 @@ func TestPaidHostTemplateAndReadyHash(t *testing.T) {
 	_ = api.AddToScheme(s)
 	_ = corev1.AddToScheme(s)
 	_ = appsv1.AddToScheme(s)
+	s.AddKnownTypeWithName(gatewayGVK, &unstructured.Unstructured{})
+	s.AddKnownTypeWithName(routeGVK, &unstructured.Unstructured{})
 	h := &api.Csm{ObjectMeta: metav1.ObjectMeta{Name: "host", Namespace: "tenant", UID: "uid"}, Spec: api.CsmSpec{Paid: true, TemplateName: "ubuntu", SystemDiskGi: 10, SSHPublicKeys: []string{"ssh-ed25519 YWJj test"}}}
 	tpl := &api.SystemTemplate{ObjectMeta: metav1.ObjectMeta{Name: "ubuntu"}, Spec: api.SystemTemplateSpec{Image: "ubuntu:24.04", Hash: "template-hash"}}
-	c := fake.NewClientBuilder().WithScheme(s).WithStatusSubresource(&api.Csm{}, &appsv1.Deployment{}).WithObjects(h, tpl).Build()
-	r := &CsmReconciler{Client: c, Scheme: s, PortStart: 30000, PortEnd: 30001}
+	gw := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "gateway.networking.k8s.io/v1", "kind": "Gateway", "metadata": map[string]any{"name": "shared", "namespace": "network"}, "spec": map[string]any{"listeners": []any{}}}}
+	owner := metav1.OwnerReference{APIVersion: "csm.w7.cc/v1alpha1", Kind: "Csm", Name: h.Name, UID: h.UID, Controller: boolPtr(true)}
+	oldService := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: h.Name, Namespace: h.Namespace, OwnerReferences: []metav1.OwnerReference{owner}}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeNodePort, Selector: map[string]string{"csm.w7.cc/host": h.Name}, Ports: []corev1.ServicePort{{Name: "ssh", Port: 22, NodePort: 30000}}}}
+	c := fake.NewClientBuilder().WithScheme(s).WithStatusSubresource(&api.Csm{}, &appsv1.Deployment{}).WithObjects(h, tpl, gw, oldService).Build()
+	r := &CsmReconciler{Client: c, Scheme: s, GatewayNamespace: "network", GatewayName: "shared", PortStart: 30000, PortEnd: 30001}
 	ctx := context.Background()
 	key := types.NamespacedName{Namespace: "tenant", Name: "host"}
 	for i := 0; i < 3; i++ {
@@ -115,8 +121,13 @@ func TestPaidHostTemplateAndReadyHash(t *testing.T) {
 	if err := c.Get(ctx, key, service); err != nil {
 		t.Fatal(err)
 	}
-	if service.Spec.Type != corev1.ServiceTypeNodePort || service.Spec.Ports[0].NodePort != 30000 {
-		t.Fatalf("host SSH Service: %#v", service.Spec)
+	if service.Spec.Type != corev1.ServiceTypeClusterIP || service.Spec.Ports[0].NodePort != 0 || service.Spec.Ports[0].Port != 22 || service.Spec.Ports[0].TargetPort.IntVal != 2222 {
+		t.Fatalf("host SSH Service was not migrated: %#v", service.Spec)
+	}
+	route := &unstructured.Unstructured{}
+	route.SetGroupVersionKind(routeGVK)
+	if err := c.Get(ctx, key, route); err != nil {
+		t.Fatalf("host TCPRoute missing: %v", err)
 	}
 	dep.Status.ReadyReplicas = 1
 	dep.Status.ObservedGeneration = dep.Generation

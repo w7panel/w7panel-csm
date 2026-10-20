@@ -38,6 +38,10 @@ spec:
               value: {{ .Values.storage.className | quote }}
             - name: CSM_SYSTEM_IMAGE
               value: {{ .Values.system.image | quote }}
+            - name: CSM_SSH_GATEWAY_NAMESPACE
+              value: {{ .Values.ssh.gatewayNamespace | quote }}
+            - name: CSM_SSH_GATEWAY_NAME
+              value: {{ .Values.ssh.gatewayName | quote }}
             - name: CSM_SSH_PUBLIC_HOST
               value: {{ .Values.ssh.publicHost | quote }}
             - name: CSM_SSH_PORT_START

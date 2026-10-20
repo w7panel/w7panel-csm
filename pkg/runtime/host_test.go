@@ -25,8 +25,8 @@ func TestDeploymentSSHSecurityAndSysbox(t *testing.T) {
 	if len(d.Spec.Template.Spec.Volumes) != 2 || len(c.VolumeMounts) != 1 {
 		t.Fatal("data disk mount missing")
 	}
-	service := Service(h, 30000)
-	if c.Ports[0].ContainerPort != 2222 || !strings.Contains(c.Args[0], "Port 2222") || service.Spec.Ports[0].TargetPort.IntVal != 2222 || service.Spec.Ports[0].NodePort != 30000 {
+	service := Service(h)
+	if c.Ports[0].ContainerPort != 2222 || !strings.Contains(c.Args[0], "Port 2222") || service.Spec.Ports[0].TargetPort.IntVal != 2222 || service.Spec.Type != "ClusterIP" || service.Spec.Ports[0].NodePort != 0 {
 		t.Fatal("SSH does not use the sysbox-safe container port")
 	}
 }
