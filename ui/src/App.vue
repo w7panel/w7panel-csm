@@ -13,6 +13,7 @@ const tabs = [
 ]
 const section = ref(location.hash.slice(1) === 'policies' ? 'versions' : location.hash.slice(1) === 'apps' ? 'templates' : location.hash.slice(1) === 'keys' ? 'hosts' : location.hash.slice(1) || 'hosts')
 const templateTab = ref(location.hash.slice(1) === 'apps' ? 'apps' : 'templates')
+const mobileMenuOpen = ref(false)
 const loading = ref(false)
 const loggedIn = ref(Boolean(localStorage.getItem('csm-token')))
 const error = ref('')
@@ -100,7 +101,7 @@ const title = computed(() => section.value === 'purchase' ? '购买' : tabs.find
 const resource = { hosts: 'csms', templates: 'system-templates', preinstall: 'preinstall-executions', upgrade: 'upgrade-executions', orders: 'orders', disks: 'data-disks', apps: 'preinstall-applications', versions: 'upgrade-versions' }
 
 async function login() { try { await startLogin() } catch (e) { error.value = e.message } }
-function go(id) { if (id === 'apps') { templateTab.value = 'apps'; id = 'templates' } section.value = id; location.hash = id; selected.value = null }
+function go(id) { if (id === 'apps') { templateTab.value = 'apps'; id = 'templates' } section.value = id; location.hash = id; selected.value = null; mobileMenuOpen.value = false }
 function orderForDisk(action, disk) {
   form.value = { kind: 'dataDisk', action, name: disk?.metadata?.name || '', templateName: '', cpu: 0, memoryGi: 0, storageGi: action === 'expand' ? Number(disk.spec?.storageGi || 0) + 10 : action === 'buy' ? 10 : 0, bandwidthMbps: 0, quantity: 1, unit: 'month' }
   go('purchase')
@@ -269,6 +270,12 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; ss
         <a-menu-item v-for="[id, label] in tabs" :key="id">{{ label }}</a-menu-item>
       </a-menu>
     </aside>
+    <div class="mobile-bar"><button type="button" class="mobile-menu-trigger" aria-label="打开导航菜单" @click="mobileMenuOpen = true">☰</button><strong>CSM 管理</strong></div>
+    <a-drawer v-model:visible="mobileMenuOpen" title="CSM 管理" placement="left" width="min(280px, 88vw)" :footer="false" :unmount-on-close="true">
+      <a-menu class="app-menu" :selected-keys="[section === 'purchase' ? (form.kind === 'dataDisk' ? 'disks' : 'hosts') : section]" @menu-item-click="go">
+        <a-menu-item v-for="[id, label] in tabs" :key="id">{{ label }}</a-menu-item>
+      </a-menu>
+    </a-drawer>
     <main>
       <a-breadcrumb class="breadcrumb"><a-breadcrumb-item>CSM 管理</a-breadcrumb-item><a-breadcrumb-item>{{ title }}</a-breadcrumb-item></a-breadcrumb>
       <header><h1>{{ title }}</h1><div class="header-actions"><a-button v-if="section === 'hosts'" type="primary" @click="go('purchase')">购买资源</a-button><a-button v-if="loggedIn" @click="load">刷新</a-button></div></header>
@@ -386,6 +393,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .rail { flex: 0 0 208px; min-height: 100vh; background: var(--color-bg-2, #fff); border-right: 1px solid var(--color-border-2, #e5e6eb); }
 .brand { display: flex; align-items: center; height: 56px; padding: 0 20px; border-bottom: 1px solid var(--color-border-2, #e5e6eb); color: var(--color-text-1, #1d2129); font-size: 16px; font-weight: 600; }
 .app-menu { padding: 8px; background: transparent; }
+.mobile-bar { display: none; }
 main { flex: 1; min-width: 0; min-height: 100vh; padding: 20px; background: var(--color-bg-2, #fff); }
 .breadcrumb { margin-bottom: 20px; }
 header { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 32px; margin-bottom: 20px; }
@@ -445,12 +453,10 @@ textarea { min-height: 90px; resize: vertical; }
 }
 @media (max-width: 600px) {
   .shell { display: block; }
-  .rail { min-height: 0; border-right: 0; border-bottom: 1px solid var(--color-border-2, #e5e6eb); }
-  .brand { height: 48px; }
-  .app-menu { display: flex; overflow-x: auto; padding: 4px 8px; white-space: nowrap; }
-  .app-menu .arco-menu-inner { display: flex; width: max-content; min-width: 100%; }
-  .app-menu .arco-menu-item { flex: 0 0 auto; width: auto; white-space: nowrap; }
-  main { min-height: calc(100vh - 100px); padding: 16px; }
+  .rail { display: none; }
+  .mobile-bar { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 16px; border-bottom: 1px solid var(--color-border-2, #e5e6eb); background: var(--color-bg-2, #fff); }
+  .mobile-menu-trigger { width: 36px; height: 36px; padding: 0; border: 0; background: transparent; color: rgb(var(--primary-6, 22, 93, 255)); font-size: 20px; }
+  main { min-height: calc(100vh - 48px); padding: 16px; }
   .grid { grid-template-columns: 1fr; }
   header { flex-wrap: wrap; }
 }
