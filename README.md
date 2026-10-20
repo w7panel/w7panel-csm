@@ -15,8 +15,8 @@ testing. It uses the built UI in the main project and product ID 17057 from
 CKM's prepare endpoint. The callback host is `localhost`, so payment callbacks
 will not work. This target explicitly permits HTTP OIDC endpoints and a local
 HTTP redirect URI.
-Pass `CSM_SSH_GATEWAY_NAMESPACE` and `CSM_SSH_GATEWAY_NAME` to `make run` for
-the Gateway available in that cluster.
+`make run` defaults to the `higress-system/higress` Gateway; override
+`CSM_SSH_GATEWAY_NAMESPACE` and `CSM_SSH_GATEWAY_NAME` for another cluster.
 
 `make manifests` refreshes the host and data disk CRDs while preserving the
 cluster-scoped template, preinstall, and upgrade CRDs. Use `make docker-build`

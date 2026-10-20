@@ -4,6 +4,8 @@ SYSTEM_IMG ?= w7panel-csm-system:ubuntu-24.04
 CONTROLLER_GEN ?= controller-gen
 CHART_DIR ?= charts/w7panel-csm
 NAMESPACE ?= default
+CSM_SSH_GATEWAY_NAMESPACE ?= higress-system
+CSM_SSH_GATEWAY_NAME ?= higress
 GO_CACHE_DIR ?= $(CURDIR)/.cache/go
 CRD_BUILD_DIR ?= $(GO_CACHE_DIR)/crd
 GO_ENV = GOCACHE=$(GO_CACHE_DIR)/build GOMODCACHE=$(GO_CACHE_DIR)/mod GOTMPDIR=$(GO_CACHE_DIR)/tmp
