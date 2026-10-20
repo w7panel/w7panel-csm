@@ -20,7 +20,7 @@ rules:
     verbs: ["create"]
   - apiGroups: [""]
     resources: ["configmaps"]
-    resourceNames: ["csm-ssh-keys", "w7panel-csm-pricing"]
+    resourceNames: ["w7panel-csm-pricing"]
     verbs: ["get", "update", "patch", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments"]

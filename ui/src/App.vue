@@ -8,10 +8,10 @@ import UpgradeVersions from './UpgradeVersions.vue'
 const tabs = [
   ['hosts', '主机'], ['templates', '系统模板'],
   ['preinstall', '预装'], ['upgrade', '升级'], ['orders', '订单'],
-  ['disks', '数据管理'], ['keys', 'SSH 公钥'],
+  ['disks', '数据管理'],
   ['versions', '版本升级'], ['pricing', '费用设置'],
 ]
-const section = ref(location.hash.slice(1) === 'policies' ? 'versions' : location.hash.slice(1) === 'apps' ? 'templates' : location.hash.slice(1) || 'hosts')
+const section = ref(location.hash.slice(1) === 'policies' ? 'versions' : location.hash.slice(1) === 'apps' ? 'templates' : location.hash.slice(1) === 'keys' ? 'hosts' : location.hash.slice(1) || 'hosts')
 const templateTab = ref(location.hash.slice(1) === 'apps' ? 'apps' : 'templates')
 const loading = ref(false)
 const loggedIn = ref(Boolean(localStorage.getItem('csm-token')))
@@ -34,7 +34,6 @@ const purchasePeriods = [
   { quantity: 1, unit: 'month' }, { quantity: 2, unit: 'month' }, { quantity: 3, unit: 'month' },
   ...Array.from({ length: 10 }, (_, index) => ({ quantity: index + 1, unit: 'year' })),
 ]
-const key = ref({ name: '', publicKey: '' })
 const mountTarget = ref('')
 const hostKey = ref('')
 const sshHost = ref('')
@@ -62,7 +61,10 @@ const orderSearch = ref('')
 const appliedOrderSearch = ref('')
 const filteredOrders = computed(() => rows.value.filter(row => row.orderSn?.includes(appliedOrderSearch.value)))
 const mountHosts = ref([])
-const draft = ref({ name: '', shell: '', order: 0, templateName: '', version: '' })
+const draft = ref({ name: '', shell: '', order: 0 })
+const appDrawerOpen = ref(false)
+const appSaving = ref(false)
+const appError = ref('')
 const terminalOpen = ref(false)
 const terminalText = ref('')
 let terminalSocket
@@ -95,7 +97,7 @@ function terminalKey(event) {
   terminalSocket.send(new Uint8Array([0, ...data]))
 }
 const title = computed(() => section.value === 'purchase' ? '购买' : tabs.find(([id]) => id === section.value)?.[1] || '主机')
-const resource = { hosts: 'csms', templates: 'system-templates', preinstall: 'preinstall-executions', upgrade: 'upgrade-executions', orders: 'orders', disks: 'data-disks', keys: 'ssh-keys', apps: 'preinstall-applications', versions: 'upgrade-versions' }
+const resource = { hosts: 'csms', templates: 'system-templates', preinstall: 'preinstall-executions', upgrade: 'upgrade-executions', orders: 'orders', disks: 'data-disks', apps: 'preinstall-applications', versions: 'upgrade-versions' }
 
 async function login() { try { await startLogin() } catch (e) { error.value = e.message } }
 function go(id) { if (id === 'apps') { templateTab.value = 'apps'; id = 'templates' } section.value = id; location.hash = id; selected.value = null }
@@ -229,8 +231,21 @@ async function remove(path) {
 async function buy() {
   await run('/orders', orderRequest())
 }
+function openAppDrawer() {
+  draft.value = { name: '', shell: '', order: 0 }
+  appError.value = ''
+  appDrawerOpen.value = true
+}
 async function createConfig() {
-  if (await run('/preinstall-applications', { metadata: { name: draft.value.name }, spec: { enabled: true, order: Number(draft.value.order), shell: draft.value.shell } })) draft.value = { name: '', shell: '', order: 0 }
+  appSaving.value = true
+  appError.value = ''
+  try {
+    await api('/preinstall-applications', { method: 'POST', body: JSON.stringify({ metadata: { name: draft.value.name }, spec: { enabled: true, order: Number(draft.value.order), shell: draft.value.shell } }) })
+    appDrawerOpen.value = false
+    notice.value = '初始化配置已创建。'
+    await load()
+  } catch (e) { appError.value = e.message }
+  finally { appSaving.value = false }
 }
 function nameOf(row) { return row?.metadata?.name || row?.name || row?.orderSn || '—' }
 function phaseOf(row) { return row.status?.phase || row.status || row.spec?.order?.status || '—' }
@@ -314,14 +329,14 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; ss
         </div>
         <button class="primary" @click="savePricing">保存费用配置</button>
       </section>
-      <section v-else-if="section === 'keys'" class="panel">
-        <form class="key-form" @submit.prevent="run('/ssh-keys', key)"><label>名称<input v-model.trim="key.name" required /></label><label>SSH 公钥<textarea v-model.trim="key.publicKey" required placeholder="ssh-ed25519 ..." /></label><button class="primary">添加公钥</button></form>
-      </section>
       <template v-if="section === 'templates'">
         <div class="page-tabs" role="tablist" aria-label="系统模板管理"><button type="button" role="tab" :aria-selected="templateTab === 'templates'" :class="{ active: templateTab === 'templates' }" @click="templateTab = 'templates'">系统模板</button><button type="button" role="tab" :aria-selected="templateTab === 'apps'" :class="{ active: templateTab === 'apps' }" @click="templateTab = 'apps'">初始化配置</button></div>
         <SystemTemplates v-if="templateTab === 'templates'" :rows="rows" :loading="loading" @saved="load" @navigate="go" />
-        <section v-else class="panel form-panel"><h2>新建初始化配置</h2><form @submit.prevent="createConfig"><div class="grid"><label>名称<input v-model.trim="draft.name" required maxlength="63" placeholder="唯一名称" /></label><label>执行顺序<input v-model.number="draft.order" type="number" required /></label><label class="script-field">Shell 脚本<textarea v-model="draft.shell" required /></label></div><button class="primary">保存配置</button></form><div class="table-wrap"><table><thead><tr><th>名称</th><th>执行顺序</th><th>操作</th></tr></thead><tbody><tr v-for="row in appRows" :key="nameOf(row)"><td>{{ nameOf(row) }}</td><td>{{ row.spec?.order }}</td><td class="actions"><button class="text danger" @click="remove(`/preinstall-applications/${encodeURIComponent(nameOf(row))}`)">删除</button></td></tr></tbody></table></div><div v-if="!appRows.length" class="empty">暂无初始化配置</div></section>
+        <section v-else class="panel form-panel"><div class="panel-head"><h2>初始化配置</h2><button class="primary" @click="openAppDrawer">＋ 新建初始化配置</button></div><div class="table-wrap"><table><thead><tr><th>名称</th><th>执行顺序</th><th>操作</th></tr></thead><tbody><tr v-for="row in appRows" :key="nameOf(row)"><td>{{ nameOf(row) }}</td><td>{{ row.spec?.order }}</td><td class="actions"><button class="text danger" @click="remove(`/preinstall-applications/${encodeURIComponent(nameOf(row))}`)">删除</button></td></tr></tbody></table></div><div v-if="!appRows.length" class="empty">暂无初始化配置</div></section>
       </template>
+      <a-drawer v-model:visible="appDrawerOpen" title="新建初始化配置" width="min(560px, 100vw)" :footer="false" :unmount-on-close="true">
+        <form @submit.prevent="createConfig"><p v-if="appError" class="alert" role="alert">{{ appError }}</p><div class="grid"><label>名称<input v-model.trim="draft.name" required maxlength="63" placeholder="唯一名称" /></label><label>执行顺序<input v-model.number="draft.order" type="number" required /></label><label class="script-field">Shell 脚本<textarea v-model="draft.shell" required rows="10" /></label></div><div class="app-drawer-actions"><button type="button" class="light" @click="appDrawerOpen = false">取消</button><button class="primary" :disabled="appSaving">{{ appSaving ? '保存中…' : '保存配置' }}</button></div></form>
+      </a-drawer>
       <UpgradeVersions v-if="section === 'versions'" :rows="rows" :loading="loading" @saved="load" />
       <section v-if="section === 'orders'" class="panel">
         <div class="panel-head"><strong>全部订单 {{ rows.length }}</strong><form class="inline-form" @submit.prevent="appliedOrderSearch = orderSearch.trim()"><label>订单号<input v-model="orderSearch" placeholder="请输入订单号" /></label><button class="light">查询</button><button type="button" class="light" @click="orderSearch = ''; appliedOrderSearch = ''">重置</button></form></div>
@@ -341,13 +356,12 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; ss
           <button v-if="section === 'hosts'" class="text" @click="run(`/csms/${nameOf(row)}/preinstall`)">预装</button>
           <button v-if="section === 'hosts'" class="text" @click="detail('csms', row)">升级</button>
           <button v-if="section === 'hosts'" class="text" @click="detail('csms', row)">终端入口</button>
-          <button v-if="section === 'keys'" class="text danger" @click="remove(`/ssh-keys/${nameOf(row)}`)">删除</button>
         </td></tr></tbody></table></div>
       </section>
       <section v-if="selected" class="panel detail"><div class="panel-head"><h2>{{ nameOf(selected) }}</h2><button class="text" @click="selected = null">关闭</button></div>
         <dl v-if="section !== 'disks'"><dt>状态</dt><dd>{{ phaseOf(selected) }}</dd><dt>系统模板</dt><dd>{{ selected.spec?.templateName || '—' }}</dd><dt>SSH 端口</dt><dd>{{ selected.status?.sshPort || '—' }}</dd><template v-if="section === 'hosts' && sshHost && selected.status?.sshPort"><dt>SSH 连接</dt><dd class="mono">ssh -p {{ selected.status.sshPort }} root@{{ sshHost }}</dd></template></dl>
         <div v-if="section === 'hosts'" class="upgrade-form"><label>升级目标版本<select v-model="upgradeTarget"><option value="">选择版本</option><option v-for="version in versions" :key="nameOf(version)" :value="nameOf(version)">{{ nameOf(version) }}</option></select></label><button class="light" :disabled="!upgradeTarget" @click="approveUpgrade">确认升级</button></div>
-        <div v-if="section === 'hosts'" class="actions"><button class="light" @click="openTerminal">打开网页终端</button><button class="light" @click="go('keys')">管理 SSH 公钥</button></div><div v-if="section === 'hosts'" class="actions"><input v-model.trim="hostKey" placeholder="粘贴 SSH 公钥" /><button class="light" @click="run(`/csms/${nameOf(selected)}/ssh-keys`, { publicKey: hostKey })">添加到主机</button></div>
+        <div v-if="section === 'hosts'" class="actions"><button class="light" @click="openTerminal">打开网页终端</button></div><div v-if="section === 'hosts'" class="actions"><input v-model.trim="hostKey" aria-label="SSH 公钥" placeholder="粘贴 SSH 公钥" /><button class="light" @click="run(`/csms/${nameOf(selected)}/ssh-keys`, { publicKey: hostKey })">添加到主机</button></div>
         <template v-if="section === 'disks'"><dl><dt>容量</dt><dd>{{ selected.spec?.storageGi || 0 }} GiB</dd><dt>到期时间</dt><dd>{{ dateText(selected.spec?.expireTime) }}</dd><dt>PVC</dt><dd>{{ selected.status?.pvcName || '待创建' }}</dd><dt>挂载路径</dt><dd>{{ selected.spec?.attached ? selected.spec?.mountPath || '—' : '未挂载' }}</dd></dl><div class="actions" v-if="selected.spec?.paid"><template v-if="!selected.spec?.attached && selected.status?.phase === 'Available'"><label>目标主机<select v-model="mountTarget"><option value="">选择主机</option><option v-for="host in mountHosts.filter(host => host.spec?.paid)" :key="nameOf(host)" :value="nameOf(host)">{{ nameOf(host) }}</option></select></label><button class="light" :disabled="!mountTarget" @click="run(`/data-disks/${encodeURIComponent(nameOf(selected))}/mount`, { csmName: mountTarget })">挂载</button></template><button v-if="selected.spec?.attached" class="light" @click="unmountDisk(selected)">卸载</button></div></template>
       </section>
       <section v-if="terminalOpen" class="panel"><div class="panel-head"><h2>网页终端</h2><button class="text" @click="terminalSocket?.close(); terminalOpen = false">关闭</button></div><pre class="terminal" tabindex="0" @keydown="terminalKey">{{ terminalText || '连接中…' }}</pre><p class="hint">点击终端区域后输入命令。</p></section>
@@ -399,8 +413,6 @@ input, select, textarea { width: 100%; min-width: 0; min-height: 32px; padding: 
 input:hover, select:hover, textarea:hover { background: var(--color-fill-3, #e5e6eb); }
 input:focus, select:focus, textarea:focus { border-color: rgb(var(--primary-6, 22, 93, 255)); background: var(--color-bg-2, #fff); }
 textarea { min-height: 90px; resize: vertical; }
-.key-form { display: grid; gap: 16px; max-width: 620px; }
-.key-form .primary { justify-self: start; }
 .form-panel { padding: 16px 0 8px; }
 .pricing-combinations { max-width: 800px; margin-bottom: 20px; }
 .combination-card { margin-bottom: 12px; padding: 16px; border: 1px solid var(--color-border-2, #e5e6eb); }
@@ -409,6 +421,7 @@ textarea { min-height: 90px; resize: vertical; }
 .page-tabs button { flex: none; padding: 10px 2px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--color-text-2, #4e5969); }
 .page-tabs button.active { border-bottom-color: rgb(var(--primary-6, 22, 93, 255)); color: rgb(var(--primary-6, 22, 93, 255)); font-weight: 600; }
 .script-field { grid-column: 1 / -1; }
+.app-drawer-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .quote { color: var(--color-text-2, #4e5969); }
 .quote strong { margin-left: 8px; color: var(--color-text-1, #1d2129); font-size: 20px; }
 .table-wrap { max-width: 100%; overflow-x: auto; }

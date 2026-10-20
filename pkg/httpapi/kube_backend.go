@@ -90,9 +90,6 @@ func (b KubeBackend) call(ctx context.Context, method, path string, input any) (
 	return io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 }
 func (b KubeBackend) List(ctx context.Context, kind, namespace string) (json.RawMessage, error) {
-	if kind == "ssh-keys" {
-		return b.sshKeys(ctx, namespace)
-	}
 	path, err := b.path(kind, namespace, "")
 	if err != nil {
 		return nil, err
@@ -184,10 +181,6 @@ func (b KubeBackend) Action(ctx context.Context, kind, namespace, name, action s
 		return b.createExecution(ctx, namespace, name, "upgrade", body)
 	case kind == "csms" && action == "ssh-key":
 		return b.attachKey(ctx, namespace, name, body)
-	case kind == "ssh-keys" && action == "create":
-		return b.changeKey(ctx, namespace, name, body, false)
-	case kind == "ssh-keys" && action == "delete":
-		return b.changeKey(ctx, namespace, name, nil, true)
 	}
 	return nil, ErrNotFound
 }
@@ -463,97 +456,6 @@ func (b KubeBackend) attachKey(ctx context.Context, ns, name string, body json.R
 			continue
 		}
 		return data, err
-	}
-	return nil, ErrConflict
-}
-func (b KubeBackend) keyPath(ns string) string {
-	return strings.TrimRight(b.BaseURL, "/") + "/api/v1/namespaces/" + url.PathEscape(ns) + "/configmaps/csm-ssh-keys"
-}
-func (b KubeBackend) sshKeys(ctx context.Context, ns string) (json.RawMessage, error) {
-	if !validName(ns) {
-		return nil, ErrForbidden
-	}
-	data, err := b.call(ctx, http.MethodGet, b.keyPath(ns), nil)
-	if errors.Is(err, ErrNotFound) {
-		return []byte(`{"items":[]}`), nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var cm struct {
-		Data map[string]string `json:"data"`
-	}
-	if err := json.Unmarshal(data, &cm); err != nil {
-		return nil, err
-	}
-	items := make([]map[string]string, 0, len(cm.Data))
-	for name, key := range cm.Data {
-		items = append(items, map[string]string{"name": name, "publicKey": key})
-	}
-	return json.Marshal(map[string]any{"items": items})
-}
-func (b KubeBackend) changeKey(ctx context.Context, ns, name string, body json.RawMessage, remove bool) (json.RawMessage, error) {
-	if !validName(ns) {
-		return nil, ErrForbidden
-	}
-	var req struct {
-		Name      string `json:"name"`
-		PublicKey string `json:"publicKey"`
-	}
-	if !remove {
-		if json.Unmarshal(body, &req) != nil || !validName(req.Name) || !validPublicKey(req.PublicKey) {
-			return nil, ErrConflict
-		}
-		name = req.Name
-	}
-	if !validName(name) {
-		return nil, ErrConflict
-	}
-	for i := 0; i < 5; i++ {
-		var cm struct {
-			APIVersion string `json:"apiVersion"`
-			Kind       string `json:"kind"`
-			Metadata   struct {
-				Name            string `json:"name"`
-				Namespace       string `json:"namespace"`
-				ResourceVersion string `json:"resourceVersion,omitempty"`
-			} `json:"metadata"`
-			Data map[string]string `json:"data"`
-		}
-		raw, err := b.call(ctx, http.MethodGet, b.keyPath(ns), nil)
-		exists := err == nil
-		if err != nil && !errors.Is(err, ErrNotFound) {
-			return nil, err
-		}
-		if exists {
-			if err := json.Unmarshal(raw, &cm); err != nil {
-				return nil, err
-			}
-		} else {
-			cm.APIVersion = "v1"
-			cm.Kind = "ConfigMap"
-			cm.Metadata.Name = "csm-ssh-keys"
-			cm.Metadata.Namespace = ns
-			cm.Data = map[string]string{}
-		}
-		if remove {
-			if _, ok := cm.Data[name]; !ok {
-				return nil, ErrNotFound
-			}
-			delete(cm.Data, name)
-		} else {
-			cm.Data[name] = req.PublicKey
-		}
-		method, path := http.MethodPut, b.keyPath(ns)
-		if !exists {
-			method = http.MethodPost
-			path = strings.TrimSuffix(b.keyPath(ns), "/csm-ssh-keys")
-		}
-		result, err := b.call(ctx, method, path, cm)
-		if errors.Is(err, ErrConflict) {
-			continue
-		}
-		return result, err
 	}
 	return nil, ErrConflict
 }

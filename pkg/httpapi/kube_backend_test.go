@@ -37,6 +37,41 @@ func TestMountSetsDefaultPath(t *testing.T) {
 	}
 }
 
+func TestAttachKeyUpdatesHost(t *testing.T) {
+	const key = "ssh-ed25519 YWJj local"
+	var saved struct {
+		Spec struct {
+			SSHPublicKeys []string `json:"sshPublicKeys"`
+		} `json:"spec"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/apis/csm.w7.cc/v1alpha1/namespaces/tenant/csms/host" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method == http.MethodGet {
+			w.Write([]byte(`{"metadata":{"name":"host"},"spec":{"sshPublicKeys":[]}}`))
+			return
+		}
+		if r.Method == http.MethodPut {
+			if err := json.NewDecoder(r.Body).Decode(&saved); err != nil {
+				t.Error(err)
+			}
+			w.Write([]byte(`{}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	b := KubeBackend{BaseURL: server.URL, Client: server.Client()}
+	if _, err := b.Action(context.Background(), "csms", "tenant", "host", "ssh-key", json.RawMessage(`{"publicKey":"`+key+`"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if len(saved.Spec.SSHPublicKeys) != 1 || saved.Spec.SSHPublicKeys[0] != key {
+		t.Fatalf("host SSH keys: %v", saved.Spec.SSHPublicKeys)
+	}
+}
+
 func TestUpgradePolicyLinksToVersion(t *testing.T) {
 	policies := []any{}
 	created := false
