@@ -86,3 +86,35 @@ func TestSystemTemplateSave(t *testing.T) {
 		t.Fatalf("stale update: %v", err)
 	}
 }
+
+func TestUpgradeWithoutPolicies(t *testing.T) {
+	var created map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/apis/csm.w7.cc/v1alpha1/namespaces/tenant/csms/host":
+			w.Write([]byte(`{"spec":{"paid":true,"templateName":"old"},"status":{"templateHash":"old-hash"}}`))
+		case "/apis/csm.w7.cc/v1alpha1/upgradeversions/next":
+			w.Write([]byte(`{"spec":{"templateName":"new","policies":["legacy"]}}`))
+		case "/apis/csm.w7.cc/v1alpha1/systemtemplates/new":
+			w.Write([]byte(`{"spec":{"hash":"new-hash"}}`))
+		case "/apis/csm.w7.cc/v1alpha1/upgradeexecutions":
+			if err := json.NewDecoder(r.Body).Decode(&created); err != nil {
+				t.Error(err)
+			}
+			w.Write([]byte(`{}`))
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	b := KubeBackend{BaseURL: server.URL, Client: server.Client()}
+	ctx := context.WithValue(context.Background(), identityKey{}, Identity{Subject: "alice"})
+	if _, err := b.Action(ctx, "csms", "tenant", "host", "upgrade", json.RawMessage(`{"versionName":"next"}`)); err != nil {
+		t.Fatal(err)
+	}
+	spec := created["spec"].(map[string]any)
+	if spec["targetTemplateName"] != "new" || spec["approvedBy"] != "alice" || spec["steps"] != nil {
+		t.Fatalf("unexpected upgrade execution: %v", spec)
+	}
+}

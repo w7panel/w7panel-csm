@@ -7,7 +7,7 @@ rules:
     resources: ["namespaces"]
     verbs: ["create"]
   - apiGroups: ["csm.w7.cc"]
-    resources: ["csms", "csms/status", "csms/finalizers", "datadisks", "datadisks/status", "datadisks/finalizers", "systemtemplates", "systemtemplates/status", "preinstallapplications", "preinstallexecutions", "preinstallexecutions/status", "upgradeversions", "upgradepolicies", "upgradeexecutions", "upgradeexecutions/status", "csmorders", "csmorders/status"]
+    resources: ["csms", "csms/status", "csms/finalizers", "datadisks", "datadisks/status", "datadisks/finalizers", "systemtemplates", "systemtemplates/status", "preinstallapplications", "preinstallexecutions", "preinstallexecutions/status", "upgradeversions", "upgradeexecutions", "upgradeexecutions/status", "csmorders", "csmorders/status"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["w7panel.w7.com"]
     resources: ["licenses", "users"]

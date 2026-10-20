@@ -30,7 +30,7 @@ func (b KubeBackend) client() *http.Client {
 	return &http.Client{Timeout: 10 * time.Second}
 }
 func (b KubeBackend) path(kind, namespace, name string) (string, error) {
-	resource := map[string]string{"csms": "csms", "data-disks": "datadisks", "system-templates": "systemtemplates", "preinstall-executions": "preinstallexecutions", "upgrade-executions": "upgradeexecutions", "preinstall-applications": "preinstallapplications", "upgrade-versions": "upgradeversions", "upgrade-policies": "upgradepolicies"}[kind]
+	resource := map[string]string{"csms": "csms", "data-disks": "datadisks", "system-templates": "systemtemplates", "preinstall-executions": "preinstallexecutions", "upgrade-executions": "upgradeexecutions", "preinstall-applications": "preinstallapplications", "upgrade-versions": "upgradeversions"}[kind]
 	if resource == "" {
 		return "", ErrNotFound
 	}
@@ -134,7 +134,7 @@ func (b KubeBackend) Action(ctx context.Context, kind, namespace, name, action s
 	switch {
 	case kind == "system-templates" && (action == "create" || action == "update"):
 		return b.saveSystemTemplate(ctx, name, action, body)
-	case (kind == "preinstall-applications" || kind == "upgrade-versions" || kind == "upgrade-policies") && action == "create":
+	case (kind == "preinstall-applications" || kind == "upgrade-versions") && action == "create":
 		var input struct {
 			Metadata struct {
 				Name string `json:"name"`
@@ -145,9 +145,9 @@ func (b KubeBackend) Action(ctx context.Context, kind, namespace, name, action s
 			return nil, ErrConflict
 		}
 		path, _ := b.path(kind, "", "")
-		resourceKind := map[string]string{"system-templates": "SystemTemplate", "preinstall-applications": "PreinstallApplication", "upgrade-versions": "UpgradeVersion", "upgrade-policies": "UpgradePolicy"}[kind]
+		resourceKind := map[string]string{"preinstall-applications": "PreinstallApplication", "upgrade-versions": "UpgradeVersion"}[kind]
 		return b.call(ctx, http.MethodPost, path, map[string]any{"apiVersion": "csm.w7.cc/v1alpha1", "kind": resourceKind, "metadata": map[string]string{"name": input.Metadata.Name}, "spec": input.Spec})
-	case (kind == "system-templates" || kind == "preinstall-applications" || kind == "upgrade-versions" || kind == "upgrade-policies") && action == "delete":
+	case (kind == "system-templates" || kind == "preinstall-applications" || kind == "upgrade-versions") && action == "delete":
 		return b.delete(ctx, kind, "", name)
 	case kind == "data-disks" && (action == "mount" || action == "unmount"):
 		return b.diskAction(ctx, namespace, name, action, body)
@@ -509,34 +509,11 @@ func (b KubeBackend) createExecution(ctx context.Context, ns, name, kind string,
 		if err != nil {
 			return nil, err
 		}
-		names, _ := version.Spec["policies"].([]any)
 		targetHash, _ := target.Spec["hash"].(string)
 		if source == "" || sourceHash == "" || targetName == "" || targetHash == "" || sourceHash == targetHash {
 			return nil, ErrConflict
 		}
-		seen := map[string]bool{}
-		for _, value := range names {
-			policyName, ok := value.(string)
-			if !ok || !validName(policyName) || seen[policyName] {
-				return nil, ErrConflict
-			}
-			seen[policyName] = true
-			policy, err := b.object(ctx, "upgrade-policies", "", policyName)
-			if err != nil {
-				return nil, err
-			}
-			if policy.Spec["versionName"] != req.VersionName {
-				return nil, ErrConflict
-			}
-			if policy.Spec["enabled"] == true {
-				shell, _ := policy.Spec["shell"].(string)
-				if strings.TrimSpace(shell) == "" {
-					return nil, ErrConflict
-				}
-				steps = append(steps, map[string]any{"name": policyName, "order": policy.Spec["order"], "shell": policy.Spec["shell"]})
-			}
-		}
-		spec = map[string]any{"csmNamespace": ns, "csmName": name, "approvedBy": identity(ctx).Subject, "sourceTemplateName": source, "sourceTemplateHash": sourceHash, "targetTemplateName": targetName, "targetTemplateHash": target.Spec["hash"], "versionName": req.VersionName, "steps": steps}
+		spec = map[string]any{"csmNamespace": ns, "csmName": name, "approvedBy": identity(ctx).Subject, "sourceTemplateName": source, "sourceTemplateHash": sourceHash, "targetTemplateName": targetName, "targetTemplateHash": target.Spec["hash"], "versionName": req.VersionName}
 		resource, resourceKind = "upgrade-executions", "UpgradeExecution"
 	}
 	sort.SliceStable(steps, func(i, j int) bool { return numeric(steps[i]["order"]) < numeric(steps[j]["order"]) })

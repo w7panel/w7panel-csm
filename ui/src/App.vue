@@ -5,12 +5,12 @@ import { finishLogin, startLogin } from './auth'
 import SystemTemplates from './SystemTemplates.vue'
 
 const tabs = [
-  ['hosts', '主机'], ['purchase', '购买'], ['templates', '系统模板'],
+  ['hosts', '主机'], ['templates', '系统模板'],
   ['preinstall', '预装'], ['upgrade', '升级'], ['orders', '订单'],
-  ['disks', '数据盘'], ['keys', 'SSH 公钥'],
-  ['apps', '初始化配置'], ['versions', '升级版本'], ['policies', '升级策略'], ['pricing', '费用设置'],
+  ['disks', '数据管理'], ['keys', 'SSH 公钥'],
+  ['apps', '初始化配置'], ['versions', '升级版本'], ['pricing', '费用设置'],
 ]
-const section = ref(location.hash.slice(1) || 'hosts')
+const section = ref(location.hash.slice(1) === 'policies' ? 'versions' : location.hash.slice(1) || 'hosts')
 const loading = ref(false)
 const loggedIn = ref(Boolean(localStorage.getItem('csm-token')))
 const error = ref('')
@@ -52,7 +52,7 @@ const orderSearch = ref('')
 const appliedOrderSearch = ref('')
 const filteredOrders = computed(() => rows.value.filter(row => row.orderSn?.includes(appliedOrderSearch.value)))
 const mountHosts = ref([])
-const draft = ref({ name: '', shell: '', order: 0, versionName: '', templateName: '', version: '', image: '', hash: '' })
+const draft = ref({ name: '', shell: '', order: 0, templateName: '', version: '' })
 const terminalOpen = ref(false)
 const terminalText = ref('')
 let terminalSocket
@@ -84,8 +84,8 @@ function terminalKey(event) {
   const data = new TextEncoder().encode(key)
   terminalSocket.send(new Uint8Array([0, ...data]))
 }
-const title = computed(() => tabs.find(([id]) => id === section.value)?.[1] || '主机')
-const resource = { hosts: 'csms', templates: 'system-templates', preinstall: 'preinstall-executions', upgrade: 'upgrade-executions', orders: 'orders', disks: 'data-disks', keys: 'ssh-keys', apps: 'preinstall-applications', versions: 'upgrade-versions', policies: 'upgrade-policies' }
+const title = computed(() => section.value === 'purchase' ? '购买' : tabs.find(([id]) => id === section.value)?.[1] || '主机')
+const resource = { hosts: 'csms', templates: 'system-templates', preinstall: 'preinstall-executions', upgrade: 'upgrade-executions', orders: 'orders', disks: 'data-disks', keys: 'ssh-keys', apps: 'preinstall-applications', versions: 'upgrade-versions' }
 
 async function login() { try { await startLogin() } catch (e) { error.value = e.message } }
 function go(id) { section.value = id; location.hash = id; selected.value = null }
@@ -203,8 +203,7 @@ async function buy() {
 async function createConfig() {
   const kind = resource[section.value]
   const spec = section.value === 'apps' ? { enabled: true, order: Number(draft.value.order), shell: draft.value.shell }
-    : section.value === 'policies' ? { versionName: draft.value.versionName, enabled: true, order: Number(draft.value.order), shell: draft.value.shell }
-    : { templateName: draft.value.templateName, version: draft.value.version, policies: draft.value.policies?.split(',').map(s => s.trim()).filter(Boolean) || [] }
+    : { templateName: draft.value.templateName, version: draft.value.version }
   await run(`/${kind}`, { metadata: { name: draft.value.name }, spec })
 }
 function nameOf(row) { return row?.metadata?.name || row?.name || row?.orderSn || '—' }
@@ -225,7 +224,7 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; ss
   <div class="shell">
     <aside class="rail" aria-label="CSM 功能导航">
       <div class="brand">CSM 管理</div>
-      <a-menu class="app-menu" :selected-keys="[section]" @menu-item-click="go">
+      <a-menu class="app-menu" :selected-keys="[section === 'purchase' ? (form.kind === 'dataDisk' ? 'disks' : 'hosts') : section]" @menu-item-click="go">
         <a-menu-item v-for="[id, label] in tabs" :key="id">{{ label }}</a-menu-item>
       </a-menu>
     </aside>
@@ -271,13 +270,11 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; ss
         <div class="grid"><label v-for="[field, label, unit] in pricingFields" :key="field">{{ label }}（元 / {{ unit }} / 月）<input v-model.trim="pricing[field]" type="number" min="0" step="0.01" required placeholder="0.00" /></label></div>
         <button class="primary" @click="savePricing">保存单价</button>
       </section>
-      <section v-else-if="['apps','versions','policies'].includes(section)" class="panel form-panel">
+      <section v-else-if="['apps','versions'].includes(section)" class="panel form-panel">
         <h2>新增{{ title }}</h2><div class="grid">
           <label>名称<input v-model.trim="draft.name" placeholder="唯一名称" /></label>
           <label v-if="section === 'versions'">目标模板名<input v-model.trim="draft.templateName" /></label>
           <label v-if="section === 'versions'">版本<input v-model.trim="draft.version" /></label>
-          <label v-if="section === 'versions'">策略名称（逗号分隔）<input v-model="draft.policies" /></label>
-          <label v-if="section === 'policies'">所属版本<input v-model.trim="draft.versionName" /></label>
           <label v-if="section !== 'versions'">执行顺序<input v-model.number="draft.order" type="number" /></label>
           <label v-if="section !== 'versions'">Shell 脚本<textarea v-model="draft.shell" /></label>
         </div><button class="primary" @click="createConfig">保存配置</button>
@@ -304,7 +301,7 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; ss
           <button v-if="section === 'hosts'" class="text" @click="run(`/csms/${nameOf(row)}/preinstall`)">预装</button>
           <button v-if="section === 'hosts'" class="text" @click="detail('csms', row)">升级</button>
           <button v-if="section === 'hosts'" class="text" @click="detail('csms', row)">终端入口</button>
-          <button v-if="['apps','versions','policies'].includes(section)" class="text danger" @click="remove(`/${resource[section]}/${nameOf(row)}`)">删除</button>
+          <button v-if="['apps','versions'].includes(section)" class="text danger" @click="remove(`/${resource[section]}/${nameOf(row)}`)">删除</button>
           <button v-if="section === 'keys'" class="text danger" @click="remove(`/ssh-keys/${nameOf(row)}`)">删除</button>
         </td></tr></tbody></table></div>
       </section>
