@@ -6,6 +6,8 @@ metadata:
     {{- include "w7panel-csm.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "w7panel-csm.labels" . | nindent 6 }}
@@ -42,6 +44,8 @@ spec:
               value: {{ .Values.ssh.gatewayNamespace | quote }}
             - name: CSM_SSH_GATEWAY_NAME
               value: {{ .Values.ssh.gatewayName | quote }}
+            - name: CSM_SSH_GATEWAY_SERVICE_NAME
+              value: {{ .Values.ssh.gatewayServiceName | quote }}
             - name: CSM_SSH_PUBLIC_HOST
               value: {{ .Values.ssh.publicHost | quote }}
             - name: CSM_SSH_PORT_START

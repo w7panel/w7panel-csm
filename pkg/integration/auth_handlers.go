@@ -17,7 +17,7 @@ func (a *Authenticator) AuthRoutes(next http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /csm-api/v1/auth/config", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		writeJSON(w, http.StatusOK, map[string]string{"authorizationEndpoint": a.authorizationEndpoint, "clientId": a.clientID, "redirectUri": a.redirectURI, "scope": "openid profile", "responseType": "code"})
+		writeJSON(w, http.StatusOK, map[string]string{"authorizationEndpoint": a.authorizationEndpoint, "clientId": a.clientID, "redirectUri": a.redirectURI, "scope": "openid profile", "responseType": "code", "sshHost": a.SSHPublicHost})
 	})
 	mux.HandleFunc("GET /csm-api/v1/login/config", func(w http.ResponseWriter, r *http.Request) {
 		r.URL.Path = "/csm-api/v1/auth/config"

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	api "github.com/w7panel/w7panel-csm/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -15,11 +16,15 @@ import (
 func TestGatewayPortPreservesListeners(t *testing.T) {
 	s := runtime.NewScheme()
 	_ = api.AddToScheme(s)
+	_ = corev1.AddToScheme(s)
 	s.AddKnownTypeWithName(gatewayGVK, &unstructured.Unstructured{})
 	s.AddKnownTypeWithName(routeGVK, &unstructured.Unstructured{})
 	gw := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "gateway.networking.k8s.io/v1", "kind": "Gateway", "metadata": map[string]any{"name": "shared", "namespace": "network"}, "spec": map[string]any{"listeners": []any{map[string]any{"name": "https", "port": int64(443), "protocol": "HTTPS"}}}}}
-	c := fake.NewClientBuilder().WithScheme(s).WithObjects(gw).Build()
-	r := &CsmReconciler{Client: c, Scheme: s, GatewayName: "shared", GatewayNamespace: "network", PortStart: 30000, PortEnd: 30001}
+	svc := &corev1.Service{}
+	svc.Name, svc.Namespace = "gateway", "network"
+	svc.Spec.Ports = []corev1.ServicePort{{Name: "https", Port: 443, Protocol: corev1.ProtocolTCP}}
+	c := fake.NewClientBuilder().WithScheme(s).WithObjects(gw, svc).Build()
+	r := &CsmReconciler{Client: c, Scheme: s, GatewayName: "shared", GatewayNamespace: "network", GatewayServiceName: "gateway", PortStart: 30000, PortEnd: 30001}
 	a := &api.Csm{}
 	a.Name = "a"
 	a.Namespace = "tenant"
@@ -62,16 +67,26 @@ func TestGatewayPortPreservesListeners(t *testing.T) {
 	if len(listeners) != 3 || listeners[0].(map[string]any)["name"] != "https" {
 		t.Fatalf("listeners changed: %#v", listeners)
 	}
+	if err := c.Get(ctx, types.NamespacedName{Namespace: "network", Name: "gateway"}, svc); err != nil {
+		t.Fatal(err)
+	}
+	if len(svc.Spec.Ports) != 3 || svc.Spec.Ports[1].Port != 30000 || svc.Spec.Ports[2].Port != 30001 {
+		t.Fatalf("Gateway Service ports: %#v", svc.Spec.Ports)
+	}
 }
 
 func TestGatewayReleaseRemovesOnlyHostListener(t *testing.T) {
 	s := runtime.NewScheme()
 	_ = api.AddToScheme(s)
+	_ = corev1.AddToScheme(s)
 	s.AddKnownTypeWithName(gatewayGVK, &unstructured.Unstructured{})
 	s.AddKnownTypeWithName(routeGVK, &unstructured.Unstructured{})
 	gw := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "gateway.networking.k8s.io/v1", "kind": "Gateway", "metadata": map[string]any{"name": "shared", "namespace": "network"}, "spec": map[string]any{"listeners": []any{map[string]any{"name": "https", "port": int64(443), "protocol": "HTTPS"}}}}}
-	c := fake.NewClientBuilder().WithScheme(s).WithObjects(gw).Build()
-	r := &CsmReconciler{Client: c, Scheme: s, GatewayName: "shared", GatewayNamespace: "network", PortStart: 30000, PortEnd: 30001}
+	svc := &corev1.Service{}
+	svc.Name, svc.Namespace = "gateway", "network"
+	svc.Spec.Ports = []corev1.ServicePort{{Name: "https", Port: 443, Protocol: corev1.ProtocolTCP}}
+	c := fake.NewClientBuilder().WithScheme(s).WithObjects(gw, svc).Build()
+	r := &CsmReconciler{Client: c, Scheme: s, GatewayName: "shared", GatewayNamespace: "network", GatewayServiceName: "gateway", PortStart: 30000, PortEnd: 30001}
 	h := &api.Csm{}
 	h.Name, h.Namespace, h.UID = "host", "tenant", "uid"
 	ctx := context.Background()
@@ -92,6 +107,12 @@ func TestGatewayReleaseRemovesOnlyHostListener(t *testing.T) {
 	listeners, _, _ := unstructured.NestedSlice(stored.Object, "spec", "listeners")
 	if len(listeners) != 1 || listeners[0].(map[string]any)["name"] != "https" {
 		t.Fatalf("listeners after release: %#v", listeners)
+	}
+	if err := c.Get(ctx, types.NamespacedName{Namespace: "network", Name: "gateway"}, svc); err != nil {
+		t.Fatal(err)
+	}
+	if len(svc.Spec.Ports) != 1 || svc.Spec.Ports[0].Port != 443 {
+		t.Fatalf("Gateway Service ports after release: %#v", svc.Spec.Ports)
 	}
 	route := &unstructured.Unstructured{}
 	route.SetGroupVersionKind(routeGVK)

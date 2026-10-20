@@ -50,6 +50,9 @@ ClusterIP Service. Install a Gateway implementation and the `v1alpha2` TCPRoute 
 first. The Gateway must expose the configured port range at `ssh.publicHost`;
 CSM publishes each host at `ssh.publicHost:<assigned port>`. Existing NodePort
 Services are converted to ClusterIP as hosts reconcile.
+When the Gateway's LoadBalancer Service needs an explicit port for each listener,
+set `ssh.gatewayServiceName` (for example, `higress-gateway`). CSM then adds and
+removes only its assigned SSH ports on that Service.
 By default, Discovery, issuer and JWKS URLs may use HTTP only on a cluster
 Service or loopback host; the browser authorization endpoint and redirect URI
 must use HTTPS. `CSM_OIDC_ALLOW_INSECURE_HTTP=true` permits HTTP for local

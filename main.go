@@ -74,6 +74,10 @@ func run() error {
 	if len(validation.IsDNS1123Label(gatewayNamespace)) != 0 || len(validation.IsDNS1123Label(gatewayName)) != 0 {
 		return fmt.Errorf("SSH Gateway namespace and name must be DNS labels")
 	}
+	gatewayServiceName := os.Getenv("CSM_SSH_GATEWAY_SERVICE_NAME")
+	if gatewayServiceName != "" && len(validation.IsDNS1123Label(gatewayServiceName)) != 0 {
+		return fmt.Errorf("SSH Gateway Service name must be a DNS label")
+	}
 	mockPay := os.Getenv("MOCK_PAY") == "true"
 	productID := os.Getenv("CSM_PAYMENT_PRODUCT_ID")
 	callbackHost := os.Getenv("CSM_PAYMENT_CALLBACK_HOST")
@@ -153,6 +157,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	authenticator.SSHPublicHost = os.Getenv("CSM_SSH_PUBLIC_HOST")
 	authenticator.EnsureNamespace = func(ctx context.Context, name string) error {
 		_, err := kube.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}, metav1.CreateOptions{})
 		if apierrors.IsAlreadyExists(err) {
@@ -177,7 +182,7 @@ func run() error {
 	if err := controllers.EnsureOfficialSystemTemplate(context.Background(), mgr.GetClient()); err != nil {
 		return err
 	}
-	host := &controllers.CsmReconciler{Client: mgr.GetClient(), Scheme: scheme, GatewayNamespace: gatewayNamespace, GatewayName: gatewayName, PortStart: int32(portStart), PortEnd: int32(portEnd)}
+	host := &controllers.CsmReconciler{Client: mgr.GetClient(), Scheme: scheme, GatewayNamespace: gatewayNamespace, GatewayName: gatewayName, GatewayServiceName: gatewayServiceName, PortStart: int32(portStart), PortEnd: int32(portEnd)}
 	if err := host.SetupWithManager(mgr); err != nil {
 		return err
 	}

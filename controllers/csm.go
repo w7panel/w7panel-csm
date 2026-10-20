@@ -23,11 +23,12 @@ import (
 
 type CsmReconciler struct {
 	client.Client
-	Scheme           *runtime.Scheme
-	GatewayNamespace string
-	GatewayName      string
-	PortStart        int32
-	PortEnd          int32
+	Scheme             *runtime.Scheme
+	GatewayNamespace   string
+	GatewayName        string
+	GatewayServiceName string
+	PortStart          int32
+	PortEnd            int32
 }
 
 func (r *CsmReconciler) setOwner(owner *api.Csm, obj client.Object) error {

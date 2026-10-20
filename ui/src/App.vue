@@ -34,6 +34,7 @@ const purchasePeriods = [
 const key = ref({ name: '', publicKey: '' })
 const mountTarget = ref('')
 const hostKey = ref('')
+const sshHost = ref('')
 const versions = ref([])
 const upgradeTarget = ref('')
 const payment = ref(null)
@@ -217,7 +218,7 @@ watch(() => form.value.kind, kind => {
     if (!form.value.bandwidthMbps) form.value.bandwidthMbps = 5
   }
 })
-onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; if (loggedIn.value) await load() } catch (e) { error.value = e.message } })
+onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; sshHost.value = (await api('/auth/config')).sshHost || ''; if (loggedIn.value) await load() } catch (e) { error.value = e.message } })
 </script>
 
 <template>
@@ -308,7 +309,7 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; if
         </td></tr></tbody></table></div>
       </section>
       <section v-if="selected" class="panel detail"><div class="panel-head"><h2>{{ nameOf(selected) }}</h2><button class="text" @click="selected = null">关闭</button></div>
-        <dl v-if="section !== 'disks'"><dt>状态</dt><dd>{{ phaseOf(selected) }}</dd><dt>系统模板</dt><dd>{{ selected.spec?.templateName || '—' }}</dd><dt>SSH 端口</dt><dd>{{ selected.status?.sshPort || '—' }}</dd></dl>
+        <dl v-if="section !== 'disks'"><dt>状态</dt><dd>{{ phaseOf(selected) }}</dd><dt>系统模板</dt><dd>{{ selected.spec?.templateName || '—' }}</dd><dt>SSH 端口</dt><dd>{{ selected.status?.sshPort || '—' }}</dd><template v-if="section === 'hosts' && sshHost && selected.status?.sshPort"><dt>SSH 连接</dt><dd class="mono">ssh -p {{ selected.status.sshPort }} root@{{ sshHost }}</dd></template></dl>
         <div v-if="section === 'hosts'" class="upgrade-form"><label>升级目标版本<select v-model="upgradeTarget"><option value="">选择版本</option><option v-for="version in versions" :key="nameOf(version)" :value="nameOf(version)">{{ nameOf(version) }}</option></select></label><button class="light" :disabled="!upgradeTarget" @click="approveUpgrade">确认升级</button></div>
         <div v-if="section === 'hosts'" class="actions"><button class="light" @click="openTerminal">打开网页终端</button><button class="light" @click="go('keys')">管理 SSH 公钥</button></div><div v-if="section === 'hosts'" class="actions"><input v-model.trim="hostKey" placeholder="粘贴 SSH 公钥" /><button class="light" @click="run(`/csms/${nameOf(selected)}/ssh-keys`, { publicKey: hostKey })">添加到主机</button></div>
         <template v-if="section === 'disks'"><dl><dt>容量</dt><dd>{{ selected.spec?.storageGi || 0 }} GiB</dd><dt>到期时间</dt><dd>{{ dateText(selected.spec?.expireTime) }}</dd><dt>PVC</dt><dd>{{ selected.status?.pvcName || '待创建' }}</dd><dt>挂载路径</dt><dd>{{ selected.spec?.attached ? selected.spec?.mountPath || '—' : '未挂载' }}</dd></dl><div class="actions" v-if="selected.spec?.paid"><template v-if="!selected.spec?.attached && selected.status?.phase === 'Available'"><label>目标主机<select v-model="mountTarget"><option value="">选择主机</option><option v-for="host in mountHosts.filter(host => host.spec?.paid)" :key="nameOf(host)" :value="nameOf(host)">{{ nameOf(host) }}</option></select></label><button class="light" :disabled="!mountTarget" @click="run(`/data-disks/${encodeURIComponent(nameOf(selected))}/mount`, { csmName: mountTarget })">挂载</button></template><button v-if="selected.spec?.attached" class="light" @click="unmountDisk(selected)">卸载</button></div></template>

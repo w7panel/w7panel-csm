@@ -6,11 +6,13 @@ import (
 	"fmt"
 
 	api "github.com/w7panel/w7panel-csm/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -63,13 +65,62 @@ func (r *CsmReconciler) ensurePort(ctx context.Context, host *api.Csm) (int32, e
 		if port == 0 {
 			return fmt.Errorf("SSH port pool exhausted")
 		}
+		if err := r.ensureGatewayServicePort(ctx, port); err != nil {
+			return err
+		}
 		listeners = append(listeners, map[string]any{"name": listenerName(host), "port": int64(port), "protocol": "TCP", "allowedRoutes": map[string]any{"kinds": []any{map[string]any{"kind": "TCPRoute"}}, "namespaces": map[string]any{"from": "Selector", "selector": map[string]any{"matchLabels": map[string]any{"kubernetes.io/metadata.name": host.Namespace}}}}})
 		if err := unstructured.SetNestedSlice(gw.Object, listeners, "spec", "listeners"); err != nil {
 			return err
 		}
 		return r.Update(ctx, gw)
 	})
-	return port, err
+	if err != nil {
+		return 0, err
+	}
+	return port, r.ensureGatewayServicePort(ctx, port)
+}
+
+func (r *CsmReconciler) ensureGatewayServicePort(ctx context.Context, port int32) error {
+	if r.GatewayServiceName == "" {
+		return nil
+	}
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		svc := &corev1.Service{}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: r.GatewayNamespace, Name: r.GatewayServiceName}, svc); err != nil {
+			return err
+		}
+		name := fmt.Sprintf("csm-%d", port)
+		for _, existing := range svc.Spec.Ports {
+			if existing.Port == port || existing.Name == name {
+				if existing.Port != port || existing.Name != name || existing.Protocol != corev1.ProtocolTCP || existing.TargetPort.IntVal != port {
+					return fmt.Errorf("Gateway Service port %d conflicts with CSM SSH", port)
+				}
+				return nil
+			}
+		}
+		svc.Spec.Ports = append(svc.Spec.Ports, corev1.ServicePort{Name: name, Port: port, Protocol: corev1.ProtocolTCP, TargetPort: intstr.FromInt32(port)})
+		return r.Update(ctx, svc)
+	})
+}
+
+func (r *CsmReconciler) releaseGatewayServicePort(ctx context.Context, port int32) error {
+	if r.GatewayServiceName == "" || port == 0 {
+		return nil
+	}
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		svc := &corev1.Service{}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: r.GatewayNamespace, Name: r.GatewayServiceName}, svc); err != nil {
+			return client.IgnoreNotFound(err)
+		}
+		name := fmt.Sprintf("csm-%d", port)
+		for i, existing := range svc.Spec.Ports {
+			if existing.Name == name && existing.Port == port {
+				svc.Spec.Ports = append(svc.Spec.Ports[:i], svc.Spec.Ports[i+1:]...)
+				return r.Update(ctx, svc)
+			}
+		}
+		return nil
+	})
 }
 
 func (r *CsmReconciler) ensureRoute(ctx context.Context, host *api.Csm) error {
@@ -126,7 +177,8 @@ func (r *CsmReconciler) releasePort(ctx context.Context, host *api.Csm) error {
 			return err
 		}
 	}
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	port := host.Status.SSHPort
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		gw := &unstructured.Unstructured{}
 		gw.SetGroupVersionKind(gatewayGVK)
 		if err := r.Get(ctx, types.NamespacedName{Namespace: r.GatewayNamespace, Name: r.GatewayName}, gw); err != nil {
@@ -144,6 +196,8 @@ func (r *CsmReconciler) releasePort(ctx context.Context, host *api.Csm) error {
 			}
 			if item["name"] != listenerName(host) {
 				kept = append(kept, raw)
+			} else if p, ok := item["port"].(int64); ok {
+				port = int32(p)
 			}
 		}
 		if len(kept) == len(listeners) {
@@ -154,4 +208,8 @@ func (r *CsmReconciler) releasePort(ctx context.Context, host *api.Csm) error {
 		}
 		return r.Update(ctx, gw)
 	})
+	if err != nil {
+		return err
+	}
+	return r.releaseGatewayServicePort(ctx, port)
 }

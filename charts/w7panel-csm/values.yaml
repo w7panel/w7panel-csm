@@ -25,6 +25,7 @@ system:
 ssh:
   gatewayNamespace: ""
   gatewayName: ""
+  gatewayServiceName: ""
   publicHost: ""
   portStart: 30000
   portEnd: 30999

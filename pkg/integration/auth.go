@@ -22,6 +22,7 @@ import (
 
 type Authenticator struct {
 	EnsureNamespace       func(context.Context, string) error
+	SSHPublicHost         string
 	verifier              *oidc.IDTokenVerifier
 	idVerifier            *oidc.IDTokenVerifier
 	clientID              string
