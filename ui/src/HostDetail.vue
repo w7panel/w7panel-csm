@@ -50,6 +50,7 @@ function addJumpKey() {
         <dl class="host-facts"><div><dt>主机域名</dt><dd class="mono">{{ display(host.status?.sshHost) }}</dd></div><div><dt>跳板地址</dt><dd class="mono">{{ sshHost || '—' }}</dd></div><div><dt>跳板端口</dt><dd>{{ display(host.status?.sshPort) }}</dd></div></dl>
         <p v-if="sshHost && host.status?.sshHost && host.status?.sshPort" class="host-command mono">ssh -J jump@{{ sshHost }}:{{ host.status.sshPort }} root@{{ host.status.sshHost }}</p>
         <p v-else-if="sshHost && host.status?.sshPort" class="host-command mono">ssh -p {{ host.status.sshPort }} root@{{ sshHost }}</p>
+        <p v-if="host.status?.sshHost" class="host-section-note">跳板和主机分别校验公钥。使用非默认私钥时，请先运行 ssh-add &lt;私钥路径&gt;；ssh -i 不会自动将私钥传给 -J 跳板。</p>
         <form class="host-key-form" @submit.prevent="addJumpKey"><label>添加跳板公钥<textarea v-model="jumpKey" required rows="3" placeholder="粘贴 ssh-ed25519 公钥" /></label><button class="light">添加到跳板</button></form>
         <form class="host-key-form" @submit.prevent="addKey"><label>添加主机公钥<textarea v-model="publicKey" required rows="3" placeholder="粘贴 ssh-ed25519 公钥" /></label><button class="light">添加到主机</button></form>
       </section>

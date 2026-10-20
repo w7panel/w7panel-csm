@@ -36,4 +36,4 @@ make run
 ssh -J jump@csm.fan.b2.sz.w7.com:30000 root@<主机详情中的域名>
 ```
 
-如使用私钥文件，先用 `ssh-add` 将跳板和主机私钥加入本机 agent；两个认证步骤各自匹配对应的公钥。首次连接时核对跳板与主机的 SSH 主机指纹。
+如使用非默认私钥文件，先用 `ssh-add ~/.ssh/csm-218` 将私钥加入本机 agent；若提示无法连接 agent，先运行 `eval "$(ssh-agent -s)"`。`ssh -i` 不会自动将私钥传给 `-J` 跳板。两个认证步骤各自匹配对应的公钥。首次连接时核对跳板与主机的 SSH 主机指纹；218 跳板当前指纹为 `SHA256:U6lUlqDAmopw6XEXUuyebmI493vJPZmszMkB437A2PM`。
