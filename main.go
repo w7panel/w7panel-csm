@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
@@ -35,6 +36,13 @@ func required(name string) (string, error) {
 		return "", fmt.Errorf("%s is required", name)
 	}
 	return value, nil
+}
+
+func kubernetesConfig() (*rest.Config, error) {
+	if path := os.Getenv("KUBECONFIG"); path != "" {
+		return clientcmd.BuildConfigFromFlags("", path)
+	}
+	return rest.InClusterConfig()
 }
 
 func run() error {
@@ -103,14 +111,15 @@ func run() error {
 		return fmt.Errorf("CSM_UI_ROOT must contain index.html: %s", uiRoot)
 	}
 
-	cfg, err := rest.InClusterConfig()
+	kubeconfig := os.Getenv("KUBECONFIG")
+	cfg, err := kubernetesConfig()
 	if err != nil {
 		return err
 	}
 	if cfg.BearerToken == "" {
-		return fmt.Errorf("Kubernetes service account bearer token is required")
+		return fmt.Errorf("Kubernetes bearer token is required")
 	}
-	if cfg.BearerTokenFile == "" {
+	if kubeconfig == "" && cfg.BearerTokenFile == "" {
 		return fmt.Errorf("Kubernetes projected service account token file is required")
 	}
 	kube, err := kubernetes.NewForConfig(cfg)
@@ -121,7 +130,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	kubeHTTP := &http.Client{Transport: integration.ServiceAccountTransport(cfg.BearerTokenFile, transport), Timeout: 15 * time.Second}
+	if kubeconfig == "" {
+		transport = integration.ServiceAccountTransport(cfg.BearerTokenFile, transport)
+	}
+	kubeHTTP := &http.Client{Transport: transport, Timeout: 15 * time.Second}
 	authenticator, err := integration.NewAuthenticator(context.Background(), discovery, audience, oidcClientID, oidcRedirectURI, os.Getenv("CSM_OIDC_PUBLIC_AUTHORIZATION_URL"))
 	if err != nil {
 		return err

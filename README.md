@@ -10,6 +10,12 @@ npm ci --prefix ui && make build-ui
 make build
 ```
 
+`make run` uses `$HOME/.kube/218.config` and the `default` OIDC client for local
+testing. It uses the built UI in the main project and product ID 17057 from
+CKM's prepare endpoint. The callback host is `localhost`, so payment callbacks
+will not work. This target explicitly permits HTTP OIDC endpoints and a local
+HTTP redirect URI.
+
 `make manifests` refreshes the host and data disk CRDs while preserving the
 cluster-scoped template, preinstall, and upgrade CRDs. Use `make docker-build`
 for the manager/UI image and `make docker-build-system` for the Ubuntu system
@@ -38,9 +44,10 @@ The manager requires in-cluster Kubernetes credentials and the Helm values for
 `payment.callbackHost`.
 The SSH port pool must be inside the cluster's NodePort range. CSM creates a
 NodePort Service for each host and publishes SSH at `ssh.publicHost:<assigned port>`.
-Discovery, issuer and JWKS URLs may use HTTP only on an explicitly configured
-cluster Service or loopback host. The browser authorization endpoint and
-redirect URI must use HTTPS.
+By default, Discovery, issuer and JWKS URLs may use HTTP only on a cluster
+Service or loopback host; the browser authorization endpoint and redirect URI
+must use HTTPS. `CSM_OIDC_ALLOW_INSECURE_HTTP=true` permits HTTP for local
+testing.
 When the issuer is a cluster Service, set `oidc.publicAuthorizationURL` to the
 HTTPS authorization endpoint exposed to browsers. Its path must match discovery.
 The founder sets CPU, memory, storage, and bandwidth monthly prices on the

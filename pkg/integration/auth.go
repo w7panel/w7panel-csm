@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -46,13 +47,14 @@ type cachedRole struct {
 
 // NewAuthenticator pins the issuer and JWKS endpoint from discovery at startup.
 func NewAuthenticator(ctx context.Context, discoveryURL, audience, clientID, redirectURI, publicAuthorizationURL string) (*Authenticator, error) {
+	allowInsecureHTTP := os.Getenv("CSM_OIDC_ALLOW_INSECURE_HTTP") == "true"
 	u, err := url.Parse(discoveryURL)
 	if err != nil || !trustedOIDCURL(u) || audience == "" {
-		return nil, fmt.Errorf("OIDC discovery URL must use HTTPS or an explicitly configured internal HTTP host, and audience must be set")
+		return nil, fmt.Errorf("OIDC discovery URL must use HTTPS or an allowed HTTP host, and audience must be set")
 	}
 	redirect, err := url.Parse(redirectURI)
-	if clientID == "" || err != nil || redirect.Scheme != "https" || redirect.Host == "" || redirect.Fragment != "" {
-		return nil, fmt.Errorf("OIDC client ID and HTTPS redirect URI are required")
+	if clientID == "" || err != nil || (redirect.Scheme != "https" && !(allowInsecureHTTP && redirect.Scheme == "http")) || redirect.Host == "" || redirect.Fragment != "" {
+		return nil, fmt.Errorf("OIDC client ID and allowed redirect URI are required")
 	}
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, discoveryURL, nil)
@@ -92,12 +94,12 @@ func NewAuthenticator(ctx context.Context, discoveryURL, audience, clientID, red
 	authorizationEndpoint := doc.AuthorizationEndpoint
 	if publicAuthorizationURL != "" {
 		publicURL, err := url.Parse(publicAuthorizationURL)
-		if err != nil || publicURL.Scheme != "https" || publicURL.Host == "" || publicURL.User != nil || publicURL.RawQuery != "" || publicURL.Fragment != "" || publicURL.Path != authURL.Path {
-			return nil, fmt.Errorf("public OIDC authorization URL must be HTTPS and match the discovered path")
+		if err != nil || (publicURL.Scheme != "https" && !(allowInsecureHTTP && publicURL.Scheme == "http")) || publicURL.Host == "" || publicURL.User != nil || publicURL.RawQuery != "" || publicURL.Fragment != "" || publicURL.Path != authURL.Path {
+			return nil, fmt.Errorf("public OIDC authorization URL must use an allowed scheme and match the discovered path")
 		}
 		authorizationEndpoint = publicAuthorizationURL
 	}
-	if strings.HasPrefix(authorizationEndpoint, "http://") {
+	if strings.HasPrefix(authorizationEndpoint, "http://") && !allowInsecureHTTP {
 		return nil, fmt.Errorf("browser OIDC authorization URL must use HTTPS")
 	}
 	keys := oidc.NewRemoteKeySet(context.WithValue(context.Background(), oauth2.HTTPClient, client), doc.JWKSURI)
@@ -113,6 +115,9 @@ func trustedOIDCURL(u *url.URL) bool {
 	}
 	if u.Scheme != "http" {
 		return false
+	}
+	if os.Getenv("CSM_OIDC_ALLOW_INSECURE_HTTP") == "true" {
+		return true
 	}
 	host := strings.ToLower(u.Hostname())
 	return host == "localhost" || (net.ParseIP(host) != nil && net.ParseIP(host).IsLoopback()) || strings.HasSuffix(host, ".svc") || strings.HasSuffix(host, ".svc.cluster.local")

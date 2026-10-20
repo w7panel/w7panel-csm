@@ -67,6 +67,26 @@ func TestTrustedOIDCURL(t *testing.T) {
 			t.Errorf("trustedOIDCURL(%q) = %v, parse error %v", item.raw, trustedOIDCURL(u), err)
 		}
 	}
+	t.Setenv("CSM_OIDC_ALLOW_INSECURE_HTTP", "true")
+	u, _ := url.Parse("http://218.23.2.48:9090/oidc")
+	if !trustedOIDCURL(u) {
+		t.Fatal("explicit local HTTP setting did not allow the configured OIDC host")
+	}
+}
+
+func TestAuthenticatorAllowsHTTPForLocalRun(t *testing.T) {
+	t.Setenv("CSM_OIDC_ALLOW_INSECURE_HTTP", "true")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		base := "http://" + r.Host + "/oidc"
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"issuer": base, "jwks_uri": base + "/jwks",
+			"authorization_endpoint": base + "/authorize", "token_endpoint": base + "/token",
+		})
+	}))
+	defer server.Close()
+	if _, err := NewAuthenticator(context.Background(), server.URL+"/oidc/.well-known/openid-configuration", "default", "default", "http://localhost:8082/callback", ""); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestAuthenticatorUsesPublicAuthorizationWithInternalIssuer(t *testing.T) {
@@ -78,6 +98,9 @@ func TestAuthenticatorUsesPublicAuthorizationWithInternalIssuer(t *testing.T) {
 		})
 	}))
 	defer server.Close()
+	if _, err := NewAuthenticator(context.Background(), server.URL+"/oidc/.well-known/openid-configuration", "default", "default", "https://csm.example/callback", ""); err == nil {
+		t.Fatal("HTTP browser authorization accepted without local setting")
+	}
 	publicURL := "https://auth.example/oidc/authorize"
 	a, err := NewAuthenticator(context.Background(), server.URL+"/oidc/.well-known/openid-configuration", "default", "default", "https://csm.example/callback", publicURL)
 	if err != nil || a.authorizationEndpoint != publicURL {

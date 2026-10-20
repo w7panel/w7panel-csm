@@ -8,7 +8,7 @@ GO_CACHE_DIR ?= $(CURDIR)/.cache/go
 CRD_BUILD_DIR ?= $(GO_CACHE_DIR)/crd
 GO_ENV = GOCACHE=$(GO_CACHE_DIR)/build GOMODCACHE=$(GO_CACHE_DIR)/mod GOTMPDIR=$(GO_CACHE_DIR)/tmp
 
-.PHONY: tidy fmt test build build-ui docker-build docker-build-system manifests crd install uninstall helm-template helm-lint packageHelm deployHelm prepare-go-cache
+.PHONY: tidy fmt test build run build-ui docker-build docker-build-system manifests crd install uninstall helm-template helm-lint packageHelm deployHelm prepare-go-cache
 
 prepare-go-cache:
 	@mkdir -p $(GO_CACHE_DIR)/build $(GO_CACHE_DIR)/mod $(GO_CACHE_DIR)/tmp
@@ -25,6 +25,16 @@ test: prepare-go-cache
 build: prepare-go-cache
 	@mkdir -p bin
 	$(GO_ENV) go build -buildvcs=false -o bin/$(APP_NAME) .
+
+run:
+	CSM_OIDC_ALLOW_INSECURE_HTTP=true \
+	OIDC_DISCOVERY_URL="http://218.23.2.48:9090/panel-api/v1/oidc/.well-known/openid-configuration" \
+	OIDC_AUDIENCE=default CSM_OIDC_CLIENT_ID=default CSM_OIDC_REDIRECT_URI=http://localhost:8082/callback \
+	CSM_PAYMENT_PRODUCT_ID=17057 CSM_PAYMENT_CALLBACK_HOST=localhost \
+	POD_NAMESPACE=default CSM_PAYMENT_CREDENTIAL_SECRET_NAME=csm-w7-order \
+	CSM_SSH_PORT_START=30000 CSM_SSH_PORT_END=30999 \
+	CSM_UI_ROOT="$(HOME)/workspace/ai/w7panel-csm/ui/dist" \
+	KUBECONFIG="$(HOME)/.kube/218.config" go run .
 
 build-ui:
 	cd ui && npm run build
