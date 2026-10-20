@@ -81,6 +81,7 @@ func (s *Server) Handler() http.Handler {
 	route("GET", "/system-templates", s.list("system-templates"))
 	route("GET", "/system-templates/{name}", s.get("system-templates"))
 	route("POST", "/system-templates", s.action("system-templates", "create"))
+	route("PUT", "/system-templates/{name}", s.action("system-templates", "update"))
 	route("DELETE", "/system-templates/{name}", s.action("system-templates", "delete"))
 	route("GET", "/preinstall-executions", s.list("preinstall-executions"))
 	route("GET", "/preinstall-applications", s.list("preinstall-applications"))
@@ -302,7 +303,7 @@ func (s *Server) action(kind, action string) http.HandlerFunc {
 			return
 		}
 		var body json.RawMessage
-		if r.Method == http.MethodPost {
+		if r.Method == http.MethodPost || r.Method == http.MethodPut {
 			var err error
 			body, err = io.ReadAll(io.LimitReader(r.Body, 64<<10))
 			if err != nil || (len(body) > 0 && !json.Valid(body)) {

@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { api, items } from './api'
 import { finishLogin, startLogin } from './auth'
+import SystemTemplates from './SystemTemplates.vue'
 
 const tabs = [
   ['hosts', '主机'], ['purchase', '购买'], ['templates', '系统模板'],
@@ -281,6 +282,7 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; if
       <section v-else-if="section === 'keys'" class="panel">
         <form class="key-form" @submit.prevent="run('/ssh-keys', key)"><label>名称<input v-model.trim="key.name" required /></label><label>SSH 公钥<textarea v-model.trim="key.publicKey" required placeholder="ssh-ed25519 ..." /></label><button class="primary">添加公钥</button></form>
       </section>
+      <SystemTemplates v-if="section === 'templates'" :rows="rows" :loading="loading" @saved="load" @navigate="go" />
       <section v-if="section === 'orders'" class="panel">
         <div class="panel-head"><strong>全部订单 {{ rows.length }}</strong><form class="inline-form" @submit.prevent="appliedOrderSearch = orderSearch.trim()"><label>订单号<input v-model="orderSearch" placeholder="请输入订单号" /></label><button class="light">查询</button><button type="button" class="light" @click="orderSearch = ''; appliedOrderSearch = ''">重置</button></form></div>
         <div v-if="!loading && !filteredOrders.length" class="empty">暂无订单</div>
@@ -291,11 +293,11 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; if
         <div v-if="!loading && !rows.length" class="empty">暂无数据盘</div>
         <div v-else class="table-wrap"><table><thead><tr><th>名称 / PVC</th><th>所属主机</th><th>容量</th><th>到期时间</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td><strong>{{ nameOf(row) }}</strong><small>{{ row.status?.pvcName || 'PVC 待创建' }}</small></td><td>{{ row.spec?.attached ? row.spec?.csmName : '未挂载' }}</td><td>{{ row.spec?.storageGi || 0 }} GiB</td><td>{{ dateText(row.spec?.expireTime) }}</td><td><span class="status">{{ diskStatus(row) }}</span></td><td class="actions"><button class="text" @click="detail('data-disks', row)">详情</button><button v-if="row.spec?.paid && !row.spec?.attached && row.status?.phase === 'Available'" class="text" @click="detail('data-disks', row)">挂载</button><button v-if="row.spec?.attached" class="text" @click="detail('data-disks', row)">卸载</button><button v-if="row.spec?.paid" class="text" @click="orderForDisk('renew', row)">续费</button><button v-if="row.spec?.paid" class="text" @click="orderForDisk('expand', row)">扩容</button><button v-if="!row.spec?.attached" class="text danger" @click="deleteDisk(row)">删除</button></td></tr></tbody></table></div>
       </section>
-      <section v-else-if="section !== 'purchase' && section !== 'pricing'" class="panel">
+      <section v-else-if="!['purchase', 'pricing', 'templates'].includes(section)" class="panel">
         <div class="panel-head"><span>{{ loading ? '正在加载…' : `${rows.length} 条记录` }}</span><button v-if="section === 'hosts'" class="text" @click="go('purchase')">购买资源 →</button></div>
         <div v-if="!loading && rows.length === 0" class="empty">暂无记录。{{ section === 'hosts' ? '可从购买页面创建第一台主机。' : '' }}</div>
         <div v-else class="table-wrap"><table><thead><tr><th>名称 / 订单号</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td class="mono">{{ nameOf(row) }}</td><td><span class="status">{{ phaseOf(row) }}</span></td><td class="actions">
-          <button v-if="['hosts','templates'].includes(section)" class="text" @click="detail(resource[section], row)">详情</button>
+          <button v-if="section === 'hosts'" class="text" @click="detail(resource[section], row)">详情</button>
           <button v-if="section === 'hosts'" class="text" @click="run(`/csms/${nameOf(row)}/preinstall`)">预装</button>
           <button v-if="section === 'hosts'" class="text" @click="detail('csms', row)">升级</button>
           <button v-if="section === 'hosts'" class="text" @click="detail('csms', row)">终端入口</button>

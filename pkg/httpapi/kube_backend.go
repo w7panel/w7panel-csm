@@ -3,7 +3,9 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -130,7 +132,9 @@ func (b KubeBackend) Get(ctx context.Context, kind, namespace, name string) (jso
 }
 func (b KubeBackend) Action(ctx context.Context, kind, namespace, name, action string, body json.RawMessage) (json.RawMessage, error) {
 	switch {
-	case (kind == "system-templates" || kind == "preinstall-applications" || kind == "upgrade-versions" || kind == "upgrade-policies") && action == "create":
+	case kind == "system-templates" && (action == "create" || action == "update"):
+		return b.saveSystemTemplate(ctx, name, action, body)
+	case (kind == "preinstall-applications" || kind == "upgrade-versions" || kind == "upgrade-policies") && action == "create":
 		var input struct {
 			Metadata struct {
 				Name string `json:"name"`
@@ -168,6 +172,76 @@ func (b KubeBackend) Action(ctx context.Context, kind, namespace, name, action s
 		return b.changeKey(ctx, namespace, name, nil, true)
 	}
 	return nil, ErrNotFound
+}
+
+func (b KubeBackend) saveSystemTemplate(ctx context.Context, name, action string, body json.RawMessage) (json.RawMessage, error) {
+	var input struct {
+		Metadata struct {
+			Name            string `json:"name"`
+			ResourceVersion string `json:"resourceVersion"`
+		} `json:"metadata"`
+		Spec struct {
+			Version                string   `json:"version"`
+			Source                 string   `json:"source"`
+			Image                  string   `json:"image"`
+			PreinstallApplications []string `json:"preinstallApplications"`
+		} `json:"spec"`
+	}
+	if json.Unmarshal(body, &input) != nil || !validName(input.Metadata.Name) ||
+		(action == "update" && (name != input.Metadata.Name || input.Metadata.ResourceVersion == "")) ||
+		strings.TrimSpace(input.Spec.Version) == "" || strings.TrimSpace(input.Spec.Image) == "" ||
+		(input.Spec.Source != "official" && input.Spec.Source != "manual") {
+		return nil, ErrConflict
+	}
+	if action == "create" && input.Spec.Source != "manual" {
+		return nil, ErrConflict
+	}
+	seen := map[string]bool{}
+	for _, app := range input.Spec.PreinstallApplications {
+		if !validName(app) || seen[app] {
+			return nil, ErrConflict
+		}
+		seen[app] = true
+		if _, err := b.Get(ctx, "preinstall-applications", "", app); err != nil {
+			return nil, err
+		}
+	}
+	spec := map[string]any{"version": input.Spec.Version, "source": input.Spec.Source, "image": input.Spec.Image}
+	if len(input.Spec.PreinstallApplications) > 0 {
+		spec["preinstallApplications"] = input.Spec.PreinstallApplications
+	}
+	encoded, _ := json.Marshal(spec)
+	if action == "update" {
+		current, err := b.object(ctx, "system-templates", "", name)
+		if err != nil {
+			return nil, err
+		}
+		if current.Metadata.ResourceVersion != input.Metadata.ResourceVersion {
+			return nil, ErrConflict
+		}
+		if current.Spec["source"] != input.Spec.Source {
+			return nil, ErrConflict
+		}
+		oldSpec := current.Spec
+		oldHash := oldSpec["hash"]
+		delete(oldSpec, "hash")
+		if apps, ok := oldSpec["preinstallApplications"].([]any); ok && len(apps) == 0 {
+			delete(oldSpec, "preinstallApplications")
+		}
+		oldEncoded, _ := json.Marshal(oldSpec)
+		if bytes.Equal(oldEncoded, encoded) {
+			current.Spec["hash"] = oldHash
+			return json.Marshal(current)
+		}
+		digest := sha256.Sum256(encoded)
+		spec["hash"] = hex.EncodeToString(digest[:])
+		current.Spec = spec
+		return b.update(ctx, "system-templates", "", name, current)
+	}
+	digest := sha256.Sum256(encoded)
+	spec["hash"] = hex.EncodeToString(digest[:])
+	path, _ := b.path("system-templates", "", "")
+	return b.call(ctx, http.MethodPost, path, map[string]any{"apiVersion": "csm.w7.cc/v1alpha1", "kind": "SystemTemplate", "metadata": map[string]string{"name": input.Metadata.Name}, "spec": spec})
 }
 func (b KubeBackend) delete(ctx context.Context, kind, namespace, name string) (json.RawMessage, error) {
 	path, err := b.path(kind, namespace, name)
