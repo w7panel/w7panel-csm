@@ -12,7 +12,7 @@ make build
 
 `make run` uses `$HOME/.kube/218.config` and the `default` OIDC client for local
 testing. It uses the built UI in the main project and product ID 17057 from
-CKM's prepare endpoint. The callback host is `localhost`, so payment callbacks
+W7 Cloud's prepare endpoint. The callback host is `localhost`, so payment callbacks
 will not work. This target explicitly permits HTTP OIDC endpoints and a local
 HTTP redirect URI.
 `make run` defaults to the `higress-system/higress` Gateway; override
