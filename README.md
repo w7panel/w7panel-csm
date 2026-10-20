@@ -60,7 +60,10 @@ testing.
 When the issuer is a cluster Service, set `oidc.publicAuthorizationURL` to the
 HTTPS authorization endpoint exposed to browsers. Its path must match discovery.
 The founder sets CPU, memory, storage, and bandwidth monthly prices on the
-费用设置 page. CSM calculates quotes on the server; an unset price blocks orders.
+费用设置 page. The founder can also set combination discounts for an exact
+duration, CPU, memory, storage, and bandwidth match, with separate new purchase
+and renewal percentages. Expansion and unmatched orders use unit prices. CSM
+calculates quotes on the server; an unset price blocks orders.
 
 Set `payment.credentialNamespace` to the namespace containing the existing
 `<account>.w7-config` Secrets (defaults to the CSM release namespace). CSM reads

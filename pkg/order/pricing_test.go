@@ -44,6 +44,32 @@ func TestKubePricingQuoteAndReset(t *testing.T) {
 			t.Fatalf("%s quote: cents=%d params=%v err=%v", tc.request.Action, got, params, err)
 		}
 	}
+	prices := Prices{CPUCents: 100, MemoryGiCents: 50, StorageGiCents: 10, BandwidthMbpsCents: 20,
+		Combinations: []PriceCombination{{Quantity: 1, Unit: "month", CPU: 2, MemoryGi: 4, StorageGi: 20, BandwidthMbps: 5, DiscountNew: 80, DiscountRenew: 90}}}
+	if err := p.Put(ctx, prices); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		request Request
+		want    int64
+	}{
+		{buy, 560},
+		{Request{Kind: "csm", Action: "renew", Namespace: "csm-alice", Name: "host", Quantity: 1, Unit: "month"}, 630},
+		{Request{Kind: "csm", Action: "buy", Namespace: "csm-alice", Name: "host", TemplateName: "ubuntu-24.04", CPU: 2, MemoryGi: 4, StorageGi: 21, BandwidthMbps: 5, Quantity: 1, Unit: "month"}, 710},
+		{Request{Kind: "csm", Action: "expand", Namespace: "csm-alice", Name: "host", CPU: 3, MemoryGi: 4, StorageGi: 20, BandwidthMbps: 5}, 50},
+	} {
+		got, _, _, err := p.Quote(ctx, tc.request)
+		if err != nil || got != tc.want {
+			t.Fatalf("%s combination quote: got %d, want %d, err %v", tc.request.Action, got, tc.want, err)
+		}
+	}
+	prices.CPUCents = 101
+	if err := p.Put(ctx, prices); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _, err := p.Quote(ctx, buy); err != nil || got != 562 {
+		t.Fatalf("fractional-cent discount: got %d, want 562, err %v", got, err)
+	}
 	if err := p.Delete(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -59,5 +85,13 @@ func TestPricingRejectsInvalidValues(t *testing.T) {
 	}
 	if _, err := weightedCents(Prices{CPUCents: 100_000_000}, Request{CPU: 1_000_001}); err != ErrInvalid {
 		t.Fatalf("unbounded resource count accepted: %v", err)
+	}
+	combo := PriceCombination{Quantity: 1, Unit: "month", CPU: 2, MemoryGi: 4, StorageGi: 20, BandwidthMbps: 5, DiscountNew: 80, DiscountRenew: 90}
+	if err := p.Put(context.Background(), Prices{Combinations: []PriceCombination{combo, combo}}); err != ErrInvalid {
+		t.Fatalf("duplicate combination accepted: %v", err)
+	}
+	combo.DiscountNew = 0
+	if err := p.Put(context.Background(), Prices{Combinations: []PriceCombination{combo}}); err != ErrInvalid {
+		t.Fatalf("zero discount accepted: %v", err)
 	}
 }

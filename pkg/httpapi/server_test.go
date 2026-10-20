@@ -58,6 +58,13 @@ func TestPricingFounderGuardAndQuote(t *testing.T) {
 	if w := call("PUT", Prefix+"/pricing", "founder", body); w.Code != 200 {
 		t.Fatalf("founder pricing update: %d %s", w.Code, w.Body.String())
 	}
+	combination := `{"quantity":1,"unit":"month","cpu":2,"memoryGi":4,"storageGi":20,"bandwidthMbps":5,"discountNew":80,"discountRenew":90}`
+	if w := call("PUT", Prefix+"/pricing", "founder", strings.TrimSuffix(body, "}")+`,"combinations":[`+combination+`]}`); w.Code != 200 {
+		t.Fatalf("combination pricing update: %d %s", w.Code, w.Body.String())
+	}
+	if w := call("PUT", Prefix+"/pricing", "founder", body); w.Code != 200 || len(pricing.saved.Combinations) != 1 {
+		t.Fatalf("legacy pricing update lost combinations: %d %s", w.Code, w.Body.String())
+	}
 	if w := call("POST", Prefix+"/orders/quote", "tenant", `{"kind":"csm","action":"buy","name":"host","cpu":2}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"amountCents":200`) {
 		t.Fatalf("quote: %d %s", w.Code, w.Body.String())
 	}

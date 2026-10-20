@@ -43,6 +43,13 @@ const pricingFields = [
   ['storageGiCents', '存储', 'GiB'], ['bandwidthMbpsCents', '带宽', 'Mbps'],
 ]
 const pricing = ref(Object.fromEntries(pricingFields.map(([field]) => [field, ''])))
+const pricingCombinations = ref([])
+const purchaseCombination = computed(() => purchasePrices.value?.combinations?.find(item =>
+  form.value.kind === 'csm' && form.value.action === 'buy' &&
+  item.quantity === form.value.quantity && item.unit === form.value.unit &&
+  item.cpu === form.value.cpu && item.memoryGi === form.value.memoryGi &&
+  item.storageGi === form.value.storageGi && item.bandwidthMbps === form.value.bandwidthMbps
+))
 const quoteAmountCents = ref(null)
 const quoteError = ref('')
 const quoteLoading = ref(false)
@@ -140,6 +147,9 @@ function scheduleQuote() {
     finally { if (sequence === quoteSequence) quoteLoading.value = false }
   }, 350)
 }
+function addCombination() {
+  pricingCombinations.value.push({ quantity: 1, unit: 'month', cpu: 2, memoryGi: 4, storageGi: 40, bandwidthMbps: 5, discountNew: 100, discountRenew: 100 })
+}
 async function savePricing() {
   const prices = {}
   for (const [field] of pricingFields) {
@@ -148,10 +158,24 @@ async function savePricing() {
     prices[field] = Math.round(Number(value) * 100)
     if (!Number.isSafeInteger(prices[field])) { error.value = '单价超出范围。'; return }
   }
+  const combinations = pricingCombinations.value.map(item => ({ ...item }))
+  const seen = new Set()
+  for (const item of combinations) {
+    const validDuration = item.unit === 'month' ? item.quantity >= 1 && item.quantity <= 120 : item.unit === 'year' && item.quantity >= 1 && item.quantity <= 10
+    if (!validDuration || !['quantity', 'cpu', 'memoryGi', 'storageGi', 'bandwidthMbps', 'discountNew', 'discountRenew'].every(field => Number.isInteger(item[field])) ||
+      !['cpu', 'memoryGi', 'storageGi', 'bandwidthMbps'].every(field => item[field] >= 1 && item[field] <= 1000000) ||
+      item.discountNew < 1 || item.discountNew > 100 || item.discountRenew < 1 || item.discountRenew > 100) {
+      error.value = '组合规格和时长须为正整数，折扣须为 1–100%。'; return
+    }
+    const key = [item.quantity, item.unit, item.cpu, item.memoryGi, item.storageGi, item.bandwidthMbps].join(':')
+    if (seen.has(key)) { error.value = '同一时长和规格不能重复配置。'; return }
+    seen.add(key)
+  }
+  prices.combinations = combinations
   error.value = ''; notice.value = ''
   try {
     await api('/pricing', { method: 'PUT', body: JSON.stringify(prices) })
-    notice.value = '资源单价已保存。'
+    notice.value = '费用配置已保存。'
     await load()
   } catch (e) { error.value = e.message }
 }
@@ -169,6 +193,7 @@ async function load() {
     if (section.value === 'pricing') {
       const saved = await api('/pricing').catch(e => { if (e.status === 404) return null; throw e })
       pricing.value = Object.fromEntries(pricingFields.map(([field]) => [field, saved ? (saved[field] / 100).toFixed(2) : '']))
+      pricingCombinations.value = saved?.combinations?.map(item => ({ ...item })) || []
     }
     if (section.value === 'hosts') versions.value = items(await api('/upgrade-versions'))
     if (section.value === 'disks') mountHosts.value = items(await api('/csms'))
@@ -262,13 +287,31 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; ss
           <div class="purchase-custom"><label>自定义时长<input v-model.number="form.quantity" type="number" min="1" :max="form.unit === 'year' ? 10 : 120" /></label><label>单位<select v-model="form.unit"><option value="month">月</option><option value="year">年</option></select></label></div>
         </div>
         <div class="purchase-total"><span>总价</span><strong v-if="quoteAmountCents !== null">¥{{ (quoteAmountCents / 100).toFixed(2) }}</strong><span v-else>—</span></div>
+        <p v-if="quoteAmountCents !== null && purchaseCombination && purchaseCombination.discountNew < 100" class="hint" role="status">已计入组合优惠：{{ purchaseCombination.discountNew }}%（{{ purchaseCombination.discountNew / 10 }} 折）</p>
         <p v-if="quoteLoading" class="hint" role="status">正在报价…</p><p v-else-if="quoteError" class="alert" role="alert">{{ quoteError }}</p>
         <div class="purchase-actions"><button class="primary" :disabled="quoteAmountCents === null || quoteLoading || (form.kind === 'csm' && form.action === 'buy' && !form.templateName)" @click="buy">{{ form.action === 'renew' ? '续费' : form.action === 'expand' ? '扩容' : '购买' }}</button></div>
       </section>
       <section v-else-if="section === 'pricing'" class="panel form-panel">
         <p class="hint">设置各项资源的月单价；购买页按实际资源和时长向服务端获取报价。只有创始人可保存。</p>
         <div class="grid"><label v-for="[field, label, unit] in pricingFields" :key="field">{{ label }}（元 / {{ unit }} / 月）<input v-model.trim="pricing[field]" type="number" min="0" step="0.01" required placeholder="0.00" /></label></div>
-        <button class="primary" @click="savePricing">保存单价</button>
+        <div class="pricing-combinations">
+          <div class="panel-head"><strong>组合折扣</strong><button type="button" class="light" :disabled="pricingCombinations.length >= 100" @click="addCombination">＋ 添加组合</button></div>
+          <p class="hint">时长和 CPU、内存、存储、带宽全部匹配时生效；新购与续费分别设置，扩容仍按单价计算。100% 表示原价。</p>
+          <div v-for="(item, index) in pricingCombinations" :key="index" class="combination-card">
+            <div class="panel-head"><strong>组合 {{ index + 1 }}</strong><button type="button" class="text danger" @click="pricingCombinations.splice(index, 1)">删除</button></div>
+            <div class="grid">
+              <label>时长<input v-model.number="item.quantity" type="number" min="1" :max="item.unit === 'year' ? 10 : 120" step="1" /></label>
+              <label>单位<select v-model="item.unit"><option value="month">月</option><option value="year">年</option></select></label>
+              <label>CPU（核）<input v-model.number="item.cpu" type="number" min="1" step="1" /></label>
+              <label>内存（GiB）<input v-model.number="item.memoryGi" type="number" min="1" step="1" /></label>
+              <label>存储（GiB）<input v-model.number="item.storageGi" type="number" min="1" step="1" /></label>
+              <label>带宽（Mbps）<input v-model.number="item.bandwidthMbps" type="number" min="1" step="1" /></label>
+              <label>新购折扣（%）<input v-model.number="item.discountNew" type="number" min="1" max="100" step="1" /></label>
+              <label>续费折扣（%）<input v-model.number="item.discountRenew" type="number" min="1" max="100" step="1" /></label>
+            </div>
+          </div>
+        </div>
+        <button class="primary" @click="savePricing">保存费用配置</button>
       </section>
       <section v-else-if="['apps','versions'].includes(section)" class="panel form-panel">
         <h2>新增{{ title }}</h2><div class="grid">
@@ -363,6 +406,9 @@ textarea { min-height: 90px; resize: vertical; }
 .key-form { display: grid; gap: 16px; max-width: 620px; }
 .key-form .primary { justify-self: start; }
 .form-panel { padding: 16px 0 8px; }
+.pricing-combinations { max-width: 800px; margin-bottom: 20px; }
+.combination-card { margin-bottom: 12px; padding: 16px; border: 1px solid var(--color-border-2, #e5e6eb); }
+.combination-card .grid { margin-bottom: 0; }
 .quote { color: var(--color-text-2, #4e5969); }
 .quote strong { margin-left: 8px; color: var(--color-text-1, #1d2129); font-size: 20px; }
 .table-wrap { max-width: 100%; overflow-x: auto; }

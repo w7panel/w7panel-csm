@@ -133,18 +133,27 @@ func (s *Server) putPricing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		CPUCents           *int64 `json:"cpuCents"`
-		MemoryGiCents      *int64 `json:"memoryGiCents"`
-		StorageGiCents     *int64 `json:"storageGiCents"`
-		BandwidthMbpsCents *int64 `json:"bandwidthMbpsCents"`
+		CPUCents           *int64                    `json:"cpuCents"`
+		MemoryGiCents      *int64                    `json:"memoryGiCents"`
+		StorageGiCents     *int64                    `json:"storageGiCents"`
+		BandwidthMbpsCents *int64                    `json:"bandwidthMbpsCents"`
+		Combinations       *[]order.PriceCombination `json:"combinations"`
 	}
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 4096))
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 64<<10))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&input) != nil || decoder.Decode(new(any)) != io.EOF || input.CPUCents == nil || input.MemoryGiCents == nil || input.StorageGiCents == nil || input.BandwidthMbpsCents == nil {
 		respondError(w, 400, "invalid pricing JSON")
 		return
 	}
 	prices := order.Prices{CPUCents: *input.CPUCents, MemoryGiCents: *input.MemoryGiCents, StorageGiCents: *input.StorageGiCents, BandwidthMbpsCents: *input.BandwidthMbpsCents}
+	if input.Combinations != nil {
+		prices.Combinations = *input.Combinations
+	} else if existing, err := s.Pricing.Get(r.Context()); err == nil {
+		prices.Combinations = existing.Combinations
+	} else if !errors.Is(err, order.ErrPricingMissing) {
+		writeResult(w, nil, err)
+		return
+	}
 	if err := s.Pricing.Put(r.Context(), prices); err != nil {
 		writeResult(w, nil, err)
 		return

@@ -22,10 +22,22 @@ const PricingConfigMap = "w7panel-csm-pricing"
 
 // Prices are integer cents per resource unit per 720-hour month.
 type Prices struct {
-	CPUCents           int64 `json:"cpuCents"`
-	MemoryGiCents      int64 `json:"memoryGiCents"`
-	StorageGiCents     int64 `json:"storageGiCents"`
-	BandwidthMbpsCents int64 `json:"bandwidthMbpsCents"`
+	CPUCents           int64              `json:"cpuCents"`
+	MemoryGiCents      int64              `json:"memoryGiCents"`
+	StorageGiCents     int64              `json:"storageGiCents"`
+	BandwidthMbpsCents int64              `json:"bandwidthMbpsCents"`
+	Combinations       []PriceCombination `json:"combinations,omitempty"`
+}
+
+type PriceCombination struct {
+	Quantity      int64  `json:"quantity"`
+	Unit          string `json:"unit"`
+	CPU           int64  `json:"cpu"`
+	MemoryGi      int64  `json:"memoryGi"`
+	StorageGi     int64  `json:"storageGi"`
+	BandwidthMbps int64  `json:"bandwidthMbps"`
+	DiscountNew   int64  `json:"discountNew"`
+	DiscountRenew int64  `json:"discountRenew"`
 }
 
 var ErrPricingMissing = errors.New("pricing is not configured")
@@ -88,6 +100,21 @@ func (p Prices) validate() error {
 			return ErrInvalid
 		}
 	}
+	if len(p.Combinations) > 100 {
+		return ErrInvalid
+	}
+	for i, combo := range p.Combinations {
+		if !validDuration(combo.Quantity, combo.Unit) || combo.CPU < 1 || combo.MemoryGi < 1 || combo.StorageGi < 1 || combo.BandwidthMbps < 1 ||
+			combo.CPU > 1_000_000 || combo.MemoryGi > 1_000_000 || combo.StorageGi > 1_000_000 || combo.BandwidthMbps > 1_000_000 ||
+			combo.DiscountNew < 1 || combo.DiscountNew > 100 || combo.DiscountRenew < 1 || combo.DiscountRenew > 100 {
+			return ErrInvalid
+		}
+		for _, previous := range p.Combinations[:i] {
+			if combo.Quantity == previous.Quantity && combo.Unit == previous.Unit && combo.CPU == previous.CPU && combo.MemoryGi == previous.MemoryGi && combo.StorageGi == previous.StorageGi && combo.BandwidthMbps == previous.BandwidthMbps {
+				return ErrInvalid
+			}
+		}
+	}
 	return nil
 }
 
@@ -146,6 +173,18 @@ func (p KubePricing) Quote(ctx context.Context, r Request) (int64, string, url.V
 	target := r
 	if r.Action == "renew" {
 		target = old
+	}
+	if r.Kind == "csm" && (r.Action == "buy" || r.Action == "renew") {
+		for _, combo := range prices.Combinations {
+			if combo.Quantity == r.Quantity && combo.Unit == r.Unit && combo.CPU == target.CPU && combo.MemoryGi == target.MemoryGi && combo.StorageGi == target.StorageGi && combo.BandwidthMbps == target.BandwidthMbps {
+				discount := combo.DiscountNew
+				if r.Action == "renew" {
+					discount = combo.DiscountRenew
+				}
+				cents = cents/100*discount + (cents%100*discount+99)/100
+				break
+			}
+		}
 	}
 	params := url.Values{
 		"hour":      {strconv.FormatInt(hours, 10)},
