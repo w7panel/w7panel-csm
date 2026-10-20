@@ -234,6 +234,9 @@ func (b KubeBackend) diskAction(ctx context.Context, ns, name, action string, bo
 			}
 			disk.Spec["csmName"] = req.CsmName
 			disk.Spec["attached"] = true
+			if disk.Spec["mountPath"] == nil || disk.Spec["mountPath"] == "" {
+				disk.Spec["mountPath"] = "/mnt/" + name
+			}
 		} else {
 			disk.Spec["attached"] = false
 		}
