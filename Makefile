@@ -1,6 +1,10 @@
 APP_NAME ?= csm
 IMG ?= w7panel-csm:latest
 SYSTEM_IMG ?= w7panel-csm-system:ubuntu-24.04
+KO_DOCKER_REPO ?= docker.cnb.cool/i0358/w7panel-csm
+KO_DEFAULTBASEIMAGE ?= ccr.ccs.tencentyun.com/afan-public/ubuntu:24.04-offlineui
+KO_PLATFORM ?= linux/amd64
+KO_IMAGE_TAG ?= $(if $(CNB_BRANCH),$(CNB_BRANCH),$(shell git describe --tags --exact-match 2>/dev/null || git branch --show-current))
 CONTROLLER_GEN ?= controller-gen
 CHART_DIR ?= charts/w7panel-csm
 NAMESPACE ?= default
@@ -12,7 +16,7 @@ GO_CACHE_DIR ?= $(CURDIR)/.cache/go
 CRD_BUILD_DIR ?= $(GO_CACHE_DIR)/crd
 GO_ENV = GOCACHE=$(GO_CACHE_DIR)/build GOMODCACHE=$(GO_CACHE_DIR)/mod GOTMPDIR=$(GO_CACHE_DIR)/tmp
 
-.PHONY: tidy fmt test build run build-ui docker-build docker-build-system manifests crd install uninstall helm-template helm-lint packageHelm deployHelm prepare-go-cache
+.PHONY: tidy fmt test build run build-ui ko-build docker-build docker-build-system manifests crd install uninstall helm-template helm-lint packageHelm deployHelm prepare-go-cache
 
 prepare-go-cache:
 	@mkdir -p $(GO_CACHE_DIR)/build $(GO_CACHE_DIR)/mod $(GO_CACHE_DIR)/tmp
@@ -43,6 +47,13 @@ run:
 
 build-ui:
 	cd ui && npm run build
+
+ko-build: prepare-go-cache build-ui
+	@mkdir -p kodata/ui/dist
+	@rsync -a --delete ui/dist/ kodata/ui/dist/
+	@test -n "$(KO_IMAGE_TAG)" || { echo "Set KO_IMAGE_TAG to a non-empty image tag" >&2; exit 1; }
+	@if [ -n "$${CNB_TOKEN:-}" ]; then ko login docker.cnb.cool -u cnb -p "$$CNB_TOKEN"; fi
+	$(GO_ENV) KO_DOCKER_REPO="$(KO_DOCKER_REPO)" KO_DEFAULTBASEIMAGE="$(KO_DEFAULTBASEIMAGE)" ko build --bare --tags="$(KO_IMAGE_TAG)" --tag-only --sbom=none --platform="$(KO_PLATFORM)" .
 
 docker-build:
 	docker build -t $(IMG) .

@@ -7,32 +7,33 @@ image:
 service:
   port: 8082
 ui:
-  root: /app/ui/dist
+  root: /var/run/ko/ui/dist
 ingress:
   enabled: false
   className: higress
-  host: ""
+  host: csm.fan.b2.sz.w7.com
 oidc:
   publicAuthorizationURL: ""
-  discoveryURL: ""
+  discoveryURL: http://218.23.2.48:9090/panel-api/v1/oidc/.well-known/openid-configuration
+  allowInsecureHTTP: true
   audience: default
-  clientID: ""
-  redirectURI: ""
+  clientID: default
+  redirectURI: https://csm.fan.b2.sz.w7.com/callback
 storage:
   className: ""
 system:
   image: "docker.cnb.cool/i0358/w7panel-csm:system-ubuntu-24.04-test-20261019"
 ssh:
-  gatewayNamespace: ""
-  gatewayName: ""
-  gatewayServiceName: ""
-  publicHost: ""
+  gatewayNamespace: higress-system
+  gatewayName: gateway
+  gatewayServiceName: higress-gateway
+  publicHost: csm.fan.b2.sz.w7.com
   portStart: 30000
   portEnd: 30999
 terminal:
   allowedOrigin: ""
 payment:
-  mockPay: false
+  mockPay: true
   productID: ""
   callbackHost: ""
   credentialNamespace: ""

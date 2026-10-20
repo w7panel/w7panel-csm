@@ -120,7 +120,7 @@ func run() error {
 	}
 	uiRoot := os.Getenv("CSM_UI_ROOT")
 	if uiRoot == "" {
-		uiRoot = "/app/ui/dist"
+		uiRoot = "/var/run/ko/ui/dist"
 	}
 	if stat, err := os.Stat(filepath.Join(uiRoot, "index.html")); err != nil || stat.IsDir() {
 		return fmt.Errorf("CSM_UI_ROOT must contain index.html: %s", uiRoot)

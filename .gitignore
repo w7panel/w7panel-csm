@@ -1,4 +1,5 @@
 /bin/
 /ui/dist/
+/kodata/
 /ui/node_modules/
 /.cache/

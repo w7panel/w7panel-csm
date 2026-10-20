@@ -14,6 +14,6 @@ RUN CGO_ENABLED=0 go build -buildvcs=false -o /out/csm .
 
 FROM alpine:3.21
 COPY --from=go /out/csm /app/csm
-COPY --from=ui /src/ui/dist /app/ui/dist
+COPY --from=ui /src/ui/dist /var/run/ko/ui/dist
 USER 65532:65532
 ENTRYPOINT ["/app/csm"]
