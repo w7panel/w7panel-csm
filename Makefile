@@ -87,4 +87,4 @@ packageHelm:
 	helm package $(CHART_DIR)
 
 deployHelm:
-	helm upgrade --install w7panel-csm $(CHART_DIR) --namespace $(NAMESPACE) --create-namespace $(HELM_ARGS)
+	helm upgrade --install w7panel-csm $(CHART_DIR) --set image.tag=$(KO_IMAGE_TAG) --namespace $(NAMESPACE) --create-namespace $(HELM_ARGS)

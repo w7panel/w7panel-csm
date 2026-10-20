@@ -9,7 +9,7 @@ service:
 ui:
   root: /var/run/ko/ui/dist
 ingress:
-  enabled: false
+  enabled: true
   className: higress
   host: csm.fan.b2.sz.w7.com
 oidc:
