@@ -53,7 +53,7 @@ async function save() {
   </section>
   <section v-if="editor" class="panel template-editor">
     <div class="panel-head"><h2>{{ editor.resourceVersion ? `编辑 ${editor.name}` : '新建系统模板' }}</h2><button class="text" @click="editor = null">关闭</button></div>
-    <p class="hint">参考 CKM 的模板配置流程填写并保存。镜像须为可启动系统服务的 CSM 系统镜像。</p>
+    <p class="hint">镜像须为可启动系统服务的 CSM 系统镜像。</p>
     <p v-if="error" class="alert" role="alert">{{ error }}</p>
     <form @submit.prevent="save">
       <div class="grid">
@@ -70,9 +70,9 @@ async function save() {
 </template>
 
 <style scoped>
-.template-row{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:18px 0;border-top:1px solid #edf1f5}
-.template-row:first-of-type{border-top:0}.template-row strong{margin-right:12px}.template-row p{margin:7px 0;color:#46617b;overflow-wrap:anywhere}.template-row small{color:#8293a5}
-.template-row button{flex:none}.template-editor fieldset{border:1px solid #dfe7ef;border-radius:7px;padding:14px;margin:0 0 20px}.template-editor legend{color:#46617b;font-size:13px}
+.template-row{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:18px 0;border-top:1px solid var(--color-border-2,#e5e6eb)}
+.template-row:first-of-type{border-top:0}.template-row strong{margin-right:12px}.template-row p{margin:7px 0;color:var(--color-text-2,#4e5969);overflow-wrap:anywhere}.template-row small{color:var(--color-text-3,#86909c)}
+.template-row button{flex:none}.template-editor fieldset{border:1px solid var(--color-border-2,#e5e6eb);border-radius:2px;padding:14px;margin:0 0 20px}.template-editor legend{color:var(--color-text-2,#4e5969);font-size:13px}
 .template-check{display:inline-flex;flex-direction:row;align-items:center;margin:8px 18px 8px 0}.template-check input{min-width:auto}
 .template-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
 @media(max-width:700px){.template-row{align-items:flex-start}.template-row button{white-space:nowrap}}

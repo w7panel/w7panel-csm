@@ -222,13 +222,15 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; if
 
 <template>
   <div class="shell">
-    <aside class="rail">
-      <div class="brand"><span class="brand-mark">CSM</span><small>CONTAINER HOSTS</small></div>
-      <nav aria-label="主导航"><button v-for="[id, label] in tabs" :key="id" :class="{ active: section === id }" @click="go(id)">{{ label }}</button></nav>
-      <div class="rail-foot">W7PANEL · COMPUTE</div>
+    <aside class="rail" aria-label="CSM 功能导航">
+      <div class="brand">CSM 管理</div>
+      <a-menu class="app-menu" :selected-keys="[section]" @menu-item-click="go">
+        <a-menu-item v-for="[id, label] in tabs" :key="id">{{ label }}</a-menu-item>
+      </a-menu>
     </aside>
     <main>
-      <header><div><p class="eyebrow">容器云主机 / {{ title }}</p><h1>{{ title }}</h1></div><button v-if="loggedIn" class="light" @click="load">刷新</button></header>
+      <a-breadcrumb class="breadcrumb"><a-breadcrumb-item>CSM 管理</a-breadcrumb-item><a-breadcrumb-item>{{ title }}</a-breadcrumb-item></a-breadcrumb>
+      <header><h1>{{ title }}</h1><div class="header-actions"><a-button v-if="section === 'hosts'" type="primary" @click="go('purchase')">购买资源</a-button><a-button v-if="loggedIn" @click="load">刷新</a-button></div></header>
       <p v-if="error" class="alert" role="alert">{{ error }}</p><p v-if="notice" class="notice" role="status">{{ notice }} <a v-if="payment?.ticket" :href="`https://ip.w7.cc/pay/${encodeURIComponent(payment.ticket)}?header=false&footer=false`" target="_blank" rel="noopener noreferrer">前往 W7 云支付 ↗</a></p>
       <section v-if="!loggedIn" class="panel"><h2>登录 CSM</h2><p class="hint">使用 W7Panel 账户授权后管理云主机。</p><button class="primary" @click="login">登录</button></section>
       <template v-else><section v-if="section === 'purchase'" class="panel purchase-page">
@@ -286,15 +288,15 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; if
       <section v-if="section === 'orders'" class="panel">
         <div class="panel-head"><strong>全部订单 {{ rows.length }}</strong><form class="inline-form" @submit.prevent="appliedOrderSearch = orderSearch.trim()"><label>订单号<input v-model="orderSearch" placeholder="请输入订单号" /></label><button class="light">查询</button><button type="button" class="light" @click="orderSearch = ''; appliedOrderSearch = ''">重置</button></form></div>
         <div v-if="!loading && !filteredOrders.length" class="empty">暂无订单</div>
-        <div v-else class="table-wrap"><table><thead><tr><th>订单号</th><th>关联资源</th><th>订单类型</th><th>资源配置</th><th>金额</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead><tbody><tr v-for="row in filteredOrders" :key="row.orderSn"><td class="mono">{{ row.orderSn }}</td><td><button class="text" @click="go(row.kind === 'dataDisk' ? 'disks' : 'hosts')">{{ row.name }}</button><small>{{ row.kind === 'dataDisk' ? '数据盘' : '云主机' }}</small></td><td>{{ ({ buy: '购买', renew: '续费', expand: '扩容' })[row.action] || row.action }}</td><td>{{ row.action === 'renew' ? `${row.quantity} ${row.unit === 'year' ? '年' : '月'}` : row.kind === 'dataDisk' ? `${row.storageGi} GiB` : `${row.cpu}核 / ${row.memoryGi} GiB / ${row.storageGi} GiB / ${row.bandwidthMbps} Mbps` }}</td><td>¥{{ (row.amountCents / 100).toFixed(2) }}</td><td><span class="status">{{ orderStatus(row) }}</span></td><td>{{ dateText(row.createdAt) }}</td><td class="actions"><a v-if="row.status === 'pending' && row.ticket" class="text" :href="`https://ip.w7.cc/pay/${encodeURIComponent(row.ticket)}?header=false&footer=false`" target="_blank" rel="noopener noreferrer">支付 ↗</a><button v-if="row.status === 'pending'" class="text" @click="refreshOrder(row)">刷新状态</button><span v-else>—</span></td></tr></tbody></table></div>
+        <div v-else class="table-wrap order-table"><table><thead><tr><th>订单号</th><th>关联资源</th><th>订单类型</th><th>资源配置</th><th>金额</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead><tbody><tr v-for="row in filteredOrders" :key="row.orderSn"><td class="mono">{{ row.orderSn }}</td><td><button class="text" @click="go(row.kind === 'dataDisk' ? 'disks' : 'hosts')">{{ row.name }}</button><small>{{ row.kind === 'dataDisk' ? '数据盘' : '云主机' }}</small></td><td>{{ ({ buy: '购买', renew: '续费', expand: '扩容' })[row.action] || row.action }}</td><td>{{ row.action === 'renew' ? `${row.quantity} ${row.unit === 'year' ? '年' : '月'}` : row.kind === 'dataDisk' ? `${row.storageGi} GiB` : `${row.cpu}核 / ${row.memoryGi} GiB / ${row.storageGi} GiB / ${row.bandwidthMbps} Mbps` }}</td><td>¥{{ (row.amountCents / 100).toFixed(2) }}</td><td><span class="status">{{ orderStatus(row) }}</span></td><td>{{ dateText(row.createdAt) }}</td><td class="actions"><a v-if="row.status === 'pending' && row.ticket" class="text" :href="`https://ip.w7.cc/pay/${encodeURIComponent(row.ticket)}?header=false&footer=false`" target="_blank" rel="noopener noreferrer">支付 ↗</a><button v-if="row.status === 'pending'" class="text" @click="refreshOrder(row)">刷新状态</button><span v-else>—</span></td></tr></tbody></table></div>
       </section>
       <section v-else-if="section === 'disks'" class="panel">
         <div class="panel-head"><button class="primary" @click="orderForDisk('buy')">＋ 购买数据盘</button><span>{{ loading ? '正在加载…' : `${rows.length} 块数据盘` }}</span></div>
         <div v-if="!loading && !rows.length" class="empty">暂无数据盘</div>
-        <div v-else class="table-wrap"><table><thead><tr><th>名称 / PVC</th><th>所属主机</th><th>容量</th><th>到期时间</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td><strong>{{ nameOf(row) }}</strong><small>{{ row.status?.pvcName || 'PVC 待创建' }}</small></td><td>{{ row.spec?.attached ? row.spec?.csmName : '未挂载' }}</td><td>{{ row.spec?.storageGi || 0 }} GiB</td><td>{{ dateText(row.spec?.expireTime) }}</td><td><span class="status">{{ diskStatus(row) }}</span></td><td class="actions"><button class="text" @click="detail('data-disks', row)">详情</button><button v-if="row.spec?.paid && !row.spec?.attached && row.status?.phase === 'Available'" class="text" @click="detail('data-disks', row)">挂载</button><button v-if="row.spec?.attached" class="text" @click="detail('data-disks', row)">卸载</button><button v-if="row.spec?.paid" class="text" @click="orderForDisk('renew', row)">续费</button><button v-if="row.spec?.paid" class="text" @click="orderForDisk('expand', row)">扩容</button><button v-if="!row.spec?.attached" class="text danger" @click="deleteDisk(row)">删除</button></td></tr></tbody></table></div>
+        <div v-else class="table-wrap disk-table"><table><thead><tr><th>名称 / PVC</th><th>所属主机</th><th>容量</th><th>到期时间</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td><strong>{{ nameOf(row) }}</strong><small>{{ row.status?.pvcName || 'PVC 待创建' }}</small></td><td>{{ row.spec?.attached ? row.spec?.csmName : '未挂载' }}</td><td>{{ row.spec?.storageGi || 0 }} GiB</td><td>{{ dateText(row.spec?.expireTime) }}</td><td><span class="status">{{ diskStatus(row) }}</span></td><td class="actions"><button class="text" @click="detail('data-disks', row)">详情</button><button v-if="row.spec?.paid && !row.spec?.attached && row.status?.phase === 'Available'" class="text" @click="detail('data-disks', row)">挂载</button><button v-if="row.spec?.attached" class="text" @click="detail('data-disks', row)">卸载</button><button v-if="row.spec?.paid" class="text" @click="orderForDisk('renew', row)">续费</button><button v-if="row.spec?.paid" class="text" @click="orderForDisk('expand', row)">扩容</button><button v-if="!row.spec?.attached" class="text danger" @click="deleteDisk(row)">删除</button></td></tr></tbody></table></div>
       </section>
       <section v-else-if="!['purchase', 'pricing', 'templates'].includes(section)" class="panel">
-        <div class="panel-head"><span>{{ loading ? '正在加载…' : `${rows.length} 条记录` }}</span><button v-if="section === 'hosts'" class="text" @click="go('purchase')">购买资源 →</button></div>
+        <div class="panel-head"><span>{{ loading ? '正在加载…' : `${rows.length} 条记录` }}</span></div>
         <div v-if="!loading && rows.length === 0" class="empty">暂无记录。{{ section === 'hosts' ? '可从购买页面创建第一台主机。' : '' }}</div>
         <div v-else class="table-wrap"><table><thead><tr><th>名称 / 订单号</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td class="mono">{{ nameOf(row) }}</td><td><span class="status">{{ phaseOf(row) }}</span></td><td class="actions">
           <button v-if="section === 'hosts'" class="text" @click="detail(resource[section], row)">详情</button>
@@ -318,33 +320,129 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; if
 </template>
 
 <style>
-:root{font-family:Inter,"Noto Sans SC",system-ui,sans-serif;color:#20304c;background:#f3f6fa}*{box-sizing:border-box}body{margin:0}button,input,select,textarea{font:inherit}button{cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #6db6ee;outline-offset:2px}.shell{display:flex;min-height:100vh}.rail{width:220px;background:#142c4d;color:#dce8f6;padding:28px 16px;display:flex;flex-direction:column}.brand{padding:0 12px 36px;display:flex;flex-direction:column;gap:5px}.brand-mark{font-family:Georgia,serif;font-size:31px;letter-spacing:.09em;color:#fff}.brand small,.rail-foot{font-size:10px;letter-spacing:.18em;color:#91acc8}.rail nav{display:grid;gap:4px}.rail nav button{border:0;background:transparent;text-align:left;color:inherit;padding:12px 14px;border-radius:8px}.rail nav button:hover,.rail nav button.active{background:#25486c;color:white}.rail nav button.active{box-shadow:inset 3px 0 #60c6d4}.rail-foot{margin-top:auto;padding:22px 12px 0}main{flex:1;min-width:0;padding:34px clamp(20px,4vw,64px)}header,.panel-head{display:flex;align-items:center;justify-content:space-between;gap:16px}header{margin-bottom:28px}.eyebrow{font-size:12px;letter-spacing:.12em;color:#60809b;margin:0 0 8px}h1{font:normal 38px Georgia,serif;margin:0;color:#173254}h2{font-size:18px;margin:0}.panel{background:#fff;border:1px solid #dfe7ef;border-radius:10px;padding:22px;margin-bottom:18px;box-shadow:0 8px 28px #2343650a}.panel-head{font-size:13px;color:#6d7d91;margin-bottom:16px}.light,.primary{border:1px solid #bdcedc;border-radius:7px;background:white;padding:9px 16px;color:#244a70}.primary{background:#236488;border-color:#236488;color:white}.text{border:0;background:transparent;color:#176f9a;padding:5px}.danger{color:#ac4152}.alert,.notice{padding:12px 16px;border-radius:7px}.alert{background:#fff0f0;color:#a33}.notice{background:#e7f8f7;color:#17685e}.hint{margin:0 0 24px;color:#63768b}.grid{display:grid;grid-template-columns:repeat(2,minmax(190px,1fr));gap:18px;max-width:760px;margin-bottom:24px}label{display:flex;flex-direction:column;gap:7px;color:#46617b;font-size:13px}input,select,textarea{border:1px solid #cad7e2;border-radius:6px;padding:10px;color:#20304c;background:#fff;min-width:0}textarea{min-height:85px}.key-form{display:grid;gap:16px;max-width:620px}.key-form .primary{justify-self:start}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;text-align:left}th{font-size:12px;color:#67809b;font-weight:600;border-bottom:1px solid #e3eaf1;padding:10px}td{border-bottom:1px solid #edf1f5;padding:13px 10px}tr:last-child td{border:0}.mono{font-family:ui-monospace,SFMono-Regular,monospace}.status{display:inline-block;background:#ecf4f7;border-radius:20px;padding:4px 9px;font-size:12px}.actions{display:flex;gap:9px;flex-wrap:wrap;align-items:center}.empty{padding:28px 8px;color:#8293a5}.detail dl{display:grid;grid-template-columns:120px 1fr;gap:12px}.detail dt{color:#8091a2}.detail dd{margin:0}.detail .actions{margin-top:20px}.upgrade-form{display:flex;align-items:end;gap:12px;margin-top:22px;flex-wrap:wrap}.upgrade-form label{min-width:220px}.upgrade-form button:disabled{opacity:.5;cursor:not-allowed}.terminal{background:#0b1c30;color:#d8f7e9;min-height:300px;padding:18px;white-space:pre-wrap;overflow:auto;outline:none;font:14px/1.6 ui-monospace,monospace}@media(max-width:700px){.shell{display:block}.rail{width:auto;padding:14px}.brand{padding:0 4px 12px}.rail nav{display:flex;overflow-x:auto}.rail nav button{white-space:nowrap}.rail-foot{display:none}main{padding:20px}.grid{grid-template-columns:1fr}h1{font-size:30px}}
-.quote{color:#46617b}.quote strong{font-size:22px;color:#173254;margin-left:10px}.primary:disabled{opacity:.5;cursor:not-allowed}
-
-.inline-form{display:flex;align-items:end;gap:8px;flex-wrap:wrap}.inline-form label{min-width:220px}.inline-form input{width:100%}.panel-head strong{color:#20304c}.table-wrap{overflow-x:auto}.table-wrap table{min-width:900px}.table-wrap td small{display:block;color:#8293a5;margin-top:4px}.table-wrap td.actions{white-space:nowrap}.actions button:disabled{opacity:.5;cursor:not-allowed}.detail .actions label{min-width:220px}
-.table-wrap td.actions{display:table-cell;text-align:right}.table-wrap th:last-child{text-align:right}
-.purchase-page{max-width:1020px;margin-inline:auto}
-.purchase-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-bottom:24px}
-.purchase-table{border:1px solid #dfe7ef;border-radius:8px;overflow:hidden}
-.purchase-row{display:grid;grid-template-columns:120px minmax(0,1fr) 190px;gap:18px;align-items:center;min-height:72px;padding:12px 18px;border-top:1px solid #edf1f5}
-.purchase-row-head{min-height:42px;border-top:0;background:#f6f9fc;color:#67809b;font-size:12px;font-weight:600}
-.purchase-label{font-weight:600;color:#20304c}
-.purchase-control{display:flex;align-items:center;gap:20px;min-width:0}
-.purchase-control input[type=range]{flex:1;min-width:80px;accent-color:#236488}
-.purchase-number{display:flex;flex-direction:row;align-items:center;gap:0;flex:none;border:1px solid #cad7e2;border-radius:6px;overflow:hidden}
-.purchase-number input{width:90px;border:0;border-radius:0;text-align:right}
-.purchase-number span{padding:0 10px;color:#63768b;background:#f6f9fc;align-self:stretch;display:flex;align-items:center}
-.purchase-price{color:#b75122;font-weight:600;text-align:right}
-.purchase-price small{display:block;margin-top:3px;color:#8293a5;font-size:11px;font-weight:400}
-.purchase-muted{color:#8293a5}
-.purchase-duration{padding:24px 0;border-bottom:1px solid #edf1f5}
-.purchase-duration strong{display:block;margin-bottom:14px;color:#20304c}
-.purchase-periods{display:flex;gap:8px;flex-wrap:wrap}
-.purchase-periods button.chosen{background:#236488;border-color:#236488;color:#fff}
-.purchase-custom{display:flex;gap:12px;margin-top:16px}
-.purchase-custom label:first-child{width:180px}.purchase-custom label:last-child{width:100px}
-.purchase-total{display:flex;justify-content:space-between;align-items:center;padding:22px 0;font-weight:600}
-.purchase-total strong{font-size:26px;color:#b75122}
-.purchase-actions{display:flex;justify-content:center}.purchase-actions .primary{min-width:160px}
-@media(max-width:700px){.purchase-meta{grid-template-columns:1fr}.purchase-row{grid-template-columns:70px minmax(0,1fr);gap:10px}.purchase-row-head span:last-child{display:none}.purchase-price{grid-column:2;text-align:left}.purchase-control{gap:8px}.purchase-number input{width:64px}.purchase-custom label:first-child{width:150px}}
+:root {
+  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  color: var(--color-text-1, #1d2129);
+  background: var(--color-fill-1, #f7f8fa);
+  font-size: 14px;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px solid rgb(var(--primary-6, 22, 93, 255)); outline-offset: 2px; }
+.shell { display: flex; min-height: 100vh; background: var(--color-fill-1, #f7f8fa); }
+.rail { flex: 0 0 208px; min-height: 100vh; background: var(--color-bg-2, #fff); border-right: 1px solid var(--color-border-2, #e5e6eb); }
+.brand { display: flex; align-items: center; height: 56px; padding: 0 20px; border-bottom: 1px solid var(--color-border-2, #e5e6eb); color: var(--color-text-1, #1d2129); font-size: 16px; font-weight: 600; }
+.app-menu { padding: 8px; background: transparent; }
+main { flex: 1; min-width: 0; min-height: 100vh; padding: 20px; background: var(--color-bg-2, #fff); }
+.breadcrumb { margin-bottom: 20px; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 32px; margin-bottom: 20px; }
+.header-actions { display: flex; align-items: center; gap: 8px; }
+h1 { margin: 0; color: var(--color-text-1, #1d2129); font-size: 20px; font-weight: 600; line-height: 32px; }
+h2 { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
+.panel { margin-bottom: 20px; background: var(--color-bg-2, #fff); }
+.panel-head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 12px; color: var(--color-text-3, #86909c); font-size: 13px; }
+.light, .primary { min-height: 32px; padding: 0 15px; border: 1px solid var(--color-border-2, #e5e6eb); border-radius: 2px; background: var(--color-fill-2, #f2f3f5); color: var(--color-text-1, #1d2129); }
+.light:hover { background: var(--color-fill-3, #e5e6eb); }
+.primary { border-color: rgb(var(--primary-6, 22, 93, 255)); background: rgb(var(--primary-6, 22, 93, 255)); color: #fff; }
+.primary:hover { background: rgb(var(--primary-5, 64, 128, 255)); }
+.primary:disabled, .light:disabled { opacity: .5; cursor: not-allowed; }
+.text { min-height: 30px; padding: 3px 5px; border: 0; background: transparent; color: rgb(var(--primary-6, 22, 93, 255)); }
+.text:hover, .table-link:hover { text-decoration: underline; }
+.danger { color: rgb(var(--danger-6, 245, 63, 63)); }
+.alert, .notice { margin: 0 0 16px; padding: 10px 16px; border-radius: 2px; }
+.alert { background: var(--color-danger-light-1, #ffece8); color: rgb(var(--danger-6, 245, 63, 63)); }
+.notice { background: var(--color-success-light-1, #e8ffea); color: var(--color-text-1, #1d2129); }
+.notice a, .table-link { color: rgb(var(--primary-6, 22, 93, 255)); }
+.hint { margin: 0 0 20px; color: var(--color-text-3, #86909c); }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; max-width: 800px; margin-bottom: 20px; }
+label { display: flex; flex-direction: column; gap: 7px; color: var(--color-text-2, #4e5969); }
+input, select, textarea { width: 100%; min-width: 0; min-height: 32px; padding: 5px 10px; border: 1px solid transparent; border-radius: 2px; background: var(--color-fill-2, #f2f3f5); color: var(--color-text-1, #1d2129); }
+input:hover, select:hover, textarea:hover { background: var(--color-fill-3, #e5e6eb); }
+input:focus, select:focus, textarea:focus { border-color: rgb(var(--primary-6, 22, 93, 255)); background: var(--color-bg-2, #fff); }
+textarea { min-height: 90px; resize: vertical; }
+.key-form { display: grid; gap: 16px; max-width: 620px; }
+.key-form .primary { justify-self: start; }
+.form-panel { padding: 16px 0 8px; }
+.quote { color: var(--color-text-2, #4e5969); }
+.quote strong { margin-left: 8px; color: var(--color-text-1, #1d2129); font-size: 20px; }
+.table-wrap { max-width: 100%; overflow-x: auto; }
+.table-wrap .arco-table { min-width: 560px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.actions { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.actions input { max-width: 320px; }
+.empty { padding: 48px 16px; color: var(--color-text-3, #86909c); text-align: center; }
+.detail { padding: 20px; border: 1px solid var(--color-border-2, #e5e6eb); }
+.detail dl { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; }
+.detail dt { color: var(--color-text-3, #86909c); }
+.detail dd { margin: 0; overflow-wrap: anywhere; }
+.detail .actions { margin-top: 16px; }
+.upgrade-form { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+.upgrade-form label { min-width: 220px; }
+.terminal { min-height: 300px; padding: 16px; overflow: auto; background: #1d2129; color: #f2f3f5; font: 14px/1.6 ui-monospace, Consolas, monospace; white-space: pre-wrap; }
+.terminal:focus-visible { outline: 2px solid rgb(var(--primary-6, 22, 93, 255)); }
+@media (max-width: 720px) {
+  .rail { flex-basis: 156px; }
+  .brand { padding: 0 16px; }
+}
+@media (max-width: 600px) {
+  .shell { display: block; }
+  .rail { min-height: 0; border-right: 0; border-bottom: 1px solid var(--color-border-2, #e5e6eb); }
+  .brand { height: 48px; }
+  .app-menu { display: flex; overflow-x: auto; padding: 4px 8px; white-space: nowrap; }
+  .app-menu .arco-menu-inner { display: flex; width: max-content; min-width: 100%; }
+  .app-menu .arco-menu-item { flex: 0 0 auto; width: auto; white-space: nowrap; }
+  main { min-height: calc(100vh - 100px); padding: 16px; }
+  .grid { grid-template-columns: 1fr; }
+  header { flex-wrap: wrap; }
+}
+input[type='range'] { min-height: 0; padding: 0; border: 0; background: transparent; accent-color: rgb(var(--primary-6, 22, 93, 255)); }
+input[type='checkbox'] { width: auto; min-height: 0; padding: 0; accent-color: rgb(var(--primary-6, 22, 93, 255)); }
+.table-wrap table { width: 100%; min-width: 560px; border-collapse: collapse; color: var(--color-text-1, #1d2129); text-align: left; }
+.order-table table, .disk-table table { min-width: 900px; }
+.table-wrap th { padding: 10px 12px; border-bottom: 1px solid var(--color-border-2, #e5e6eb); background: var(--color-fill-2, #f2f3f5); color: var(--color-text-2, #4e5969); font-weight: 500; white-space: nowrap; }
+.table-wrap td { padding: 12px; border-bottom: 1px solid var(--color-border-2, #e5e6eb); vertical-align: middle; }
+.table-wrap td small { display: block; margin-top: 4px; color: var(--color-text-3, #86909c); }
+.table-wrap td.actions { display: table-cell; text-align: right; white-space: nowrap; }
+.table-wrap th:last-child { text-align: right; }
+.status { display: inline-block; padding: 2px 8px; border-radius: 2px; background: var(--color-primary-light-1, #e8f3ff); color: rgb(var(--primary-6, 22, 93, 255)); font-size: 12px; }
+.inline-form { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; }
+.inline-form label { min-width: 200px; }
+.panel-head strong { color: var(--color-text-1, #1d2129); }
+.detail .actions label { min-width: 220px; }
+.purchase-page { max-width: 1020px; margin-inline: auto; }
+.purchase-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
+.purchase-table { border: 1px solid var(--color-border-2, #e5e6eb); border-radius: 2px; overflow: hidden; }
+.purchase-row { display: grid; grid-template-columns: 120px minmax(0, 1fr) 190px; gap: 18px; align-items: center; min-height: 72px; padding: 12px 18px; border-top: 1px solid var(--color-border-2, #e5e6eb); }
+.purchase-row-head { min-height: 42px; border-top: 0; background: var(--color-fill-2, #f2f3f5); color: var(--color-text-3, #86909c); font-size: 12px; font-weight: 600; }
+.purchase-label { font-weight: 600; }
+.purchase-control { display: flex; align-items: center; gap: 20px; min-width: 0; }
+.purchase-control input[type='range'] { flex: 1; min-width: 80px; }
+.purchase-number { display: flex; flex: none; flex-direction: row; align-items: center; gap: 0; border: 1px solid var(--color-border-2, #e5e6eb); }
+.purchase-number input { width: 90px; border: 0; text-align: right; }
+.purchase-number span { align-self: stretch; display: flex; align-items: center; padding: 0 10px; background: var(--color-fill-2, #f2f3f5); color: var(--color-text-3, #86909c); }
+.purchase-price { color: rgb(var(--orange-6, 255, 125, 0)); font-weight: 600; text-align: right; }
+.purchase-price small { display: block; margin-top: 3px; color: var(--color-text-3, #86909c); font-size: 11px; font-weight: 400; }
+.purchase-muted { color: var(--color-text-3, #86909c); }
+.purchase-duration { padding: 24px 0; border-bottom: 1px solid var(--color-border-2, #e5e6eb); }
+.purchase-duration strong { display: block; margin-bottom: 14px; }
+.purchase-periods { display: flex; flex-wrap: wrap; gap: 8px; }
+.purchase-periods button.chosen { border-color: rgb(var(--primary-6, 22, 93, 255)); background: rgb(var(--primary-6, 22, 93, 255)); color: #fff; }
+.purchase-custom { display: flex; gap: 12px; margin-top: 16px; }
+.purchase-custom label:first-child { width: 180px; }
+.purchase-custom label:last-child { width: 100px; }
+.purchase-total { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; font-weight: 600; }
+.purchase-total strong { color: rgb(var(--orange-6, 255, 125, 0)); font-size: 26px; }
+.purchase-actions { display: flex; justify-content: center; }
+.purchase-actions .primary { min-width: 160px; }
+@media (max-width: 700px) {
+  .purchase-meta { grid-template-columns: 1fr; }
+  .purchase-row { grid-template-columns: 70px minmax(0, 1fr); gap: 10px; }
+  .purchase-row-head span:last-child { display: none; }
+  .purchase-price { grid-column: 2; text-align: left; }
+  .purchase-control { gap: 8px; }
+  .purchase-number input { width: 64px; }
+  .purchase-custom label:first-child { width: 150px; }
+}
 </style>
