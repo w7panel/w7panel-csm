@@ -90,6 +90,9 @@ func (s *Server) Handler() http.Handler {
 	route("GET", "/upgrade-versions", s.list("upgrade-versions"))
 	route("POST", "/upgrade-versions", s.action("upgrade-versions", "create"))
 	route("DELETE", "/upgrade-versions/{name}", s.action("upgrade-versions", "delete"))
+	route("GET", "/upgrade-policies", s.list("upgrade-policies"))
+	route("POST", "/upgrade-policies", s.action("upgrade-policies", "create"))
+	route("DELETE", "/upgrade-policies/{name}", s.action("upgrade-policies", "delete"))
 	route("GET", "/upgrade-executions", s.list("upgrade-executions"))
 	route("GET", "/data-disks", s.list("data-disks"))
 	route("GET", "/data-disks/{name}", s.get("data-disks"))
@@ -296,7 +299,7 @@ func (s *Server) action(kind, action string) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		if kind == "system-templates" || kind == "preinstall-applications" || kind == "upgrade-versions" {
+		if kind == "system-templates" || kind == "preinstall-applications" || kind == "upgrade-versions" || kind == "upgrade-policies" {
 			if !identity(r.Context()).Founder {
 				respondError(w, 403, "founder required")
 				return

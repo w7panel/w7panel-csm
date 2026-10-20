@@ -59,6 +59,29 @@
                   },
                   "versionName": {
                     "type": "string"
+                  },
+                  "steps": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "order": {
+                          "type": "integer",
+                          "format": "int32"
+                        },
+                        "shell": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "order",
+                        "shell"
+                      ]
+                    }
                   }
                 },
                 "required": [

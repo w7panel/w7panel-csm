@@ -8,7 +8,7 @@ import (
 )
 
 func init() {
-	SchemeBuilder.Register(&SystemTemplate{}, &SystemTemplateList{}, &PreinstallApplication{}, &PreinstallApplicationList{}, &PreinstallExecution{}, &PreinstallExecutionList{}, &UpgradeVersion{}, &UpgradeVersionList{}, &UpgradeExecution{}, &UpgradeExecutionList{})
+	SchemeBuilder.Register(&SystemTemplate{}, &SystemTemplateList{}, &PreinstallApplication{}, &PreinstallApplicationList{}, &PreinstallExecution{}, &PreinstallExecutionList{}, &UpgradeVersion{}, &UpgradeVersionList{}, &UpgradePolicy{}, &UpgradePolicyList{}, &UpgradeExecution{}, &UpgradeExecutionList{})
 }
 
 type SystemTemplateSpec struct {
@@ -81,8 +81,9 @@ type PreinstallExecutionList struct {
 }
 
 type UpgradeVersionSpec struct {
-	TemplateName string `json:"templateName"`
-	Version      string `json:"version"`
+	TemplateName string   `json:"templateName"`
+	Version      string   `json:"version"`
+	Policies     []string `json:"policies,omitempty"`
 }
 type UpgradeVersion struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -94,15 +95,32 @@ type UpgradeVersionList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []UpgradeVersion `json:"items"`
 }
+type UpgradePolicySpec struct {
+	VersionName string `json:"versionName"`
+	Enabled     bool   `json:"enabled"`
+	Order       int32  `json:"order"`
+	Shell       string `json:"shell"`
+}
+type UpgradePolicy struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              UpgradePolicySpec `json:"spec"`
+}
+type UpgradePolicyList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []UpgradePolicy `json:"items"`
+}
 type UpgradeExecutionSpec struct {
-	CsmNamespace       string `json:"csmNamespace"`
-	CsmName            string `json:"csmName"`
-	ApprovedBy         string `json:"approvedBy"`
-	SourceTemplateName string `json:"sourceTemplateName"`
-	SourceTemplateHash string `json:"sourceTemplateHash"`
-	TargetTemplateName string `json:"targetTemplateName"`
-	TargetTemplateHash string `json:"targetTemplateHash"`
-	VersionName        string `json:"versionName"`
+	CsmNamespace       string      `json:"csmNamespace"`
+	CsmName            string      `json:"csmName"`
+	ApprovedBy         string      `json:"approvedBy"`
+	SourceTemplateName string      `json:"sourceTemplateName"`
+	SourceTemplateHash string      `json:"sourceTemplateHash"`
+	TargetTemplateName string      `json:"targetTemplateName"`
+	TargetTemplateHash string      `json:"targetTemplateHash"`
+	VersionName        string      `json:"versionName"`
+	Steps              []ShellStep `json:"steps,omitempty"`
 }
 type UpgradeExecution struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -130,5 +148,7 @@ func (v *PreinstallExecution) DeepCopyObject() runtime.Object       { return cop
 func (v *PreinstallExecutionList) DeepCopyObject() runtime.Object   { return copyObject(v) }
 func (v *UpgradeVersion) DeepCopyObject() runtime.Object            { return copyObject(v) }
 func (v *UpgradeVersionList) DeepCopyObject() runtime.Object        { return copyObject(v) }
+func (v *UpgradePolicy) DeepCopyObject() runtime.Object             { return copyObject(v) }
+func (v *UpgradePolicyList) DeepCopyObject() runtime.Object         { return copyObject(v) }
 func (v *UpgradeExecution) DeepCopyObject() runtime.Object          { return copyObject(v) }
 func (v *UpgradeExecutionList) DeepCopyObject() runtime.Object      { return copyObject(v) }

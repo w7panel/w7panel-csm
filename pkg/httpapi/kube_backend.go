@@ -30,7 +30,7 @@ func (b KubeBackend) client() *http.Client {
 	return &http.Client{Timeout: 10 * time.Second}
 }
 func (b KubeBackend) path(kind, namespace, name string) (string, error) {
-	resource := map[string]string{"csms": "csms", "data-disks": "datadisks", "system-templates": "systemtemplates", "preinstall-executions": "preinstallexecutions", "upgrade-executions": "upgradeexecutions", "preinstall-applications": "preinstallapplications", "upgrade-versions": "upgradeversions"}[kind]
+	resource := map[string]string{"csms": "csms", "data-disks": "datadisks", "system-templates": "systemtemplates", "preinstall-executions": "preinstallexecutions", "upgrade-executions": "upgradeexecutions", "preinstall-applications": "preinstallapplications", "upgrade-versions": "upgradeversions", "upgrade-policies": "upgradepolicies"}[kind]
 	if resource == "" {
 		return "", ErrNotFound
 	}
@@ -134,6 +134,10 @@ func (b KubeBackend) Action(ctx context.Context, kind, namespace, name, action s
 	switch {
 	case kind == "system-templates" && (action == "create" || action == "update"):
 		return b.saveSystemTemplate(ctx, name, action, body)
+	case kind == "upgrade-policies" && action == "create":
+		return b.createUpgradePolicy(ctx, body)
+	case kind == "upgrade-policies" && action == "delete":
+		return b.deleteUpgradePolicy(ctx, name)
 	case (kind == "preinstall-applications" || kind == "upgrade-versions") && action == "create":
 		var input struct {
 			Metadata struct {
@@ -150,9 +154,18 @@ func (b KubeBackend) Action(ctx context.Context, kind, namespace, name, action s
 			}
 		}
 		path, _ := b.path(kind, "", "")
-		resourceKind := map[string]string{"preinstall-applications": "PreinstallApplication", "upgrade-versions": "UpgradeVersion"}[kind]
+		resourceKind := map[string]string{"system-templates": "SystemTemplate", "preinstall-applications": "PreinstallApplication", "upgrade-versions": "UpgradeVersion", "upgrade-policies": "UpgradePolicy"}[kind]
 		return b.call(ctx, http.MethodPost, path, map[string]any{"apiVersion": "csm.w7.cc/v1alpha1", "kind": resourceKind, "metadata": map[string]string{"name": input.Metadata.Name}, "spec": input.Spec})
-	case (kind == "system-templates" || kind == "preinstall-applications" || kind == "upgrade-versions") && action == "delete":
+	case kind == "upgrade-versions" && action == "delete":
+		version, err := b.object(ctx, kind, "", name)
+		if err != nil {
+			return nil, err
+		}
+		if policies, _ := version.Spec["policies"].([]any); len(policies) > 0 {
+			return nil, ErrConflict
+		}
+		return b.delete(ctx, kind, "", name)
+	case (kind == "system-templates" || kind == "preinstall-applications") && action == "delete":
 		return b.delete(ctx, kind, "", name)
 	case kind == "data-disks" && (action == "mount" || action == "unmount"):
 		return b.diskAction(ctx, namespace, name, action, body)
@@ -177,6 +190,94 @@ func (b KubeBackend) Action(ctx context.Context, kind, namespace, name, action s
 		return b.changeKey(ctx, namespace, name, nil, true)
 	}
 	return nil, ErrNotFound
+}
+
+func (b KubeBackend) changeVersionPolicy(ctx context.Context, versionName, policyName string, add bool) error {
+	for attempt := 0; attempt < 5; attempt++ {
+		version, err := b.object(ctx, "upgrade-versions", "", versionName)
+		if err != nil {
+			return err
+		}
+		names, _ := version.Spec["policies"].([]any)
+		updated := make([]any, 0, len(names)+1)
+		found := false
+		for _, name := range names {
+			if name == policyName {
+				found = true
+				if !add {
+					continue
+				}
+			}
+			updated = append(updated, name)
+		}
+		if add && !found {
+			updated = append(updated, policyName)
+		}
+		if found == add {
+			return nil
+		}
+		version.Spec["policies"] = updated
+		_, err = b.update(ctx, "upgrade-versions", "", versionName, version)
+		if errors.Is(err, ErrConflict) {
+			continue
+		}
+		return err
+	}
+	return ErrConflict
+}
+
+func (b KubeBackend) createUpgradePolicy(ctx context.Context, body json.RawMessage) (json.RawMessage, error) {
+	var input struct {
+		Metadata struct {
+			Name string `json:"name"`
+		} `json:"metadata"`
+		Spec struct {
+			VersionName string `json:"versionName"`
+			Enabled     bool   `json:"enabled"`
+			Order       int32  `json:"order"`
+			Shell       string `json:"shell"`
+		} `json:"spec"`
+	}
+	if json.Unmarshal(body, &input) != nil || !validName(input.Metadata.Name) || !validName(input.Spec.VersionName) || strings.TrimSpace(input.Spec.Shell) == "" {
+		return nil, ErrConflict
+	}
+	if _, err := b.Get(ctx, "upgrade-versions", "", input.Spec.VersionName); err != nil {
+		return nil, err
+	}
+	path, _ := b.path("upgrade-policies", "", "")
+	created, err := b.call(ctx, http.MethodPost, path, map[string]any{"apiVersion": "csm.w7.cc/v1alpha1", "kind": "UpgradePolicy", "metadata": map[string]string{"name": input.Metadata.Name}, "spec": input.Spec})
+	if err != nil {
+		return nil, err
+	}
+	if err = b.changeVersionPolicy(ctx, input.Spec.VersionName, input.Metadata.Name, true); err != nil {
+		_, rollbackErr := b.delete(ctx, "upgrade-policies", "", input.Metadata.Name)
+		if rollbackErr != nil {
+			return nil, fmt.Errorf("link policy: %w; rollback failed: %v", err, rollbackErr)
+		}
+		return nil, err
+	}
+	return created, nil
+}
+
+func (b KubeBackend) deleteUpgradePolicy(ctx context.Context, name string) (json.RawMessage, error) {
+	policy, err := b.object(ctx, "upgrade-policies", "", name)
+	if err != nil {
+		return nil, err
+	}
+	versionName, _ := policy.Spec["versionName"].(string)
+	if !validName(versionName) {
+		return nil, ErrConflict
+	}
+	if err := b.changeVersionPolicy(ctx, versionName, name, false); err != nil {
+		return nil, err
+	}
+	deleted, err := b.delete(ctx, "upgrade-policies", "", name)
+	if err != nil {
+		if rollbackErr := b.changeVersionPolicy(ctx, versionName, name, true); rollbackErr != nil {
+			return nil, fmt.Errorf("delete policy: %w; rollback failed: %v", err, rollbackErr)
+		}
+	}
+	return deleted, err
 }
 
 func (b KubeBackend) saveSystemTemplate(ctx context.Context, name, action string, body json.RawMessage) (json.RawMessage, error) {
@@ -514,11 +615,34 @@ func (b KubeBackend) createExecution(ctx context.Context, ns, name, kind string,
 		if err != nil {
 			return nil, err
 		}
+		names, _ := version.Spec["policies"].([]any)
 		targetHash, _ := target.Spec["hash"].(string)
 		if source == "" || sourceHash == "" || targetName == "" || targetHash == "" || sourceHash == targetHash {
 			return nil, ErrConflict
 		}
-		spec = map[string]any{"csmNamespace": ns, "csmName": name, "approvedBy": identity(ctx).Subject, "sourceTemplateName": source, "sourceTemplateHash": sourceHash, "targetTemplateName": targetName, "targetTemplateHash": target.Spec["hash"], "versionName": req.VersionName}
+		seen := map[string]bool{}
+		for _, value := range names {
+			policyName, ok := value.(string)
+			if !ok || !validName(policyName) || seen[policyName] {
+				return nil, ErrConflict
+			}
+			seen[policyName] = true
+			policy, err := b.object(ctx, "upgrade-policies", "", policyName)
+			if err != nil {
+				return nil, err
+			}
+			if policy.Spec["versionName"] != req.VersionName {
+				return nil, ErrConflict
+			}
+			if policy.Spec["enabled"] == true {
+				shell, _ := policy.Spec["shell"].(string)
+				if strings.TrimSpace(shell) == "" {
+					return nil, ErrConflict
+				}
+				steps = append(steps, map[string]any{"name": policyName, "order": policy.Spec["order"], "shell": policy.Spec["shell"]})
+			}
+		}
+		spec = map[string]any{"csmNamespace": ns, "csmName": name, "approvedBy": identity(ctx).Subject, "sourceTemplateName": source, "sourceTemplateHash": sourceHash, "targetTemplateName": targetName, "targetTemplateHash": target.Spec["hash"], "versionName": req.VersionName, "steps": steps}
 		resource, resourceKind = "upgrade-executions", "UpgradeExecution"
 	}
 	sort.SliceStable(steps, func(i, j int) bool { return numeric(steps[i]["order"]) < numeric(steps[j]["order"]) })

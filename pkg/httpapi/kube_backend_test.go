@@ -37,6 +37,39 @@ func TestMountSetsDefaultPath(t *testing.T) {
 	}
 }
 
+func TestUpgradePolicyLinksToVersion(t *testing.T) {
+	policies := []any{}
+	created := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/apis/csm.w7.cc/v1alpha1/upgradeversions/next":
+			json.NewEncoder(w).Encode(map[string]any{"apiVersion": "csm.w7.cc/v1alpha1", "kind": "UpgradeVersion", "metadata": map[string]any{"name": "next", "resourceVersion": "1"}, "spec": map[string]any{"templateName": "ubuntu", "version": "2", "policies": policies}})
+		case r.Method == http.MethodPost && r.URL.Path == "/apis/csm.w7.cc/v1alpha1/upgradepolicies":
+			created = true
+			w.Write([]byte(`{"metadata":{"name":"migrate"}}`))
+		case r.Method == http.MethodPut && r.URL.Path == "/apis/csm.w7.cc/v1alpha1/upgradeversions/next":
+			var version struct {
+				Spec struct {
+					Policies []any `json:"policies"`
+				} `json:"spec"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&version); err != nil {
+				t.Error(err)
+			}
+			policies = version.Spec.Policies
+			w.Write([]byte(`{}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	b := KubeBackend{BaseURL: server.URL, Client: server.Client()}
+	_, err := b.Action(context.Background(), "upgrade-policies", "", "", "create", json.RawMessage(`{"metadata":{"name":"migrate"},"spec":{"versionName":"next","enabled":true,"order":1,"shell":"echo migrate"}}`))
+	if err != nil || !created || len(policies) != 1 || policies[0] != "migrate" {
+		t.Fatalf("policy link: created=%v policies=%v err=%v", created, policies, err)
+	}
+}
+
 func TestSystemTemplateSave(t *testing.T) {
 	var created, updated map[string]any
 	putCount := 0
@@ -87,7 +120,7 @@ func TestSystemTemplateSave(t *testing.T) {
 	}
 }
 
-func TestUpgradeWithoutPolicies(t *testing.T) {
+func TestUpgradeSnapshotsVersionPolicies(t *testing.T) {
 	var created map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -97,6 +130,8 @@ func TestUpgradeWithoutPolicies(t *testing.T) {
 			w.Write([]byte(`{"spec":{"templateName":"new","policies":["legacy"]}}`))
 		case "/apis/csm.w7.cc/v1alpha1/systemtemplates/new":
 			w.Write([]byte(`{"spec":{"hash":"new-hash"}}`))
+		case "/apis/csm.w7.cc/v1alpha1/upgradepolicies/legacy":
+			w.Write([]byte(`{"spec":{"versionName":"next","enabled":true,"order":2,"shell":"echo upgrade"}}`))
 		case "/apis/csm.w7.cc/v1alpha1/upgradeexecutions":
 			if err := json.NewDecoder(r.Body).Decode(&created); err != nil {
 				t.Error(err)
@@ -117,7 +152,8 @@ func TestUpgradeWithoutPolicies(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := created["spec"].(map[string]any)
-	if spec["targetTemplateName"] != "new" || spec["approvedBy"] != "alice" || spec["steps"] != nil {
+	steps, _ := spec["steps"].([]any)
+	if spec["targetTemplateName"] != "new" || spec["approvedBy"] != "alice" || len(steps) != 1 || steps[0].(map[string]any)["shell"] != "echo upgrade" {
 		t.Fatalf("unexpected upgrade execution: %v", spec)
 	}
 }

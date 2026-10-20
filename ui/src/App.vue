@@ -3,14 +3,16 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { api, items } from './api'
 import { finishLogin, startLogin } from './auth'
 import SystemTemplates from './SystemTemplates.vue'
+import UpgradeVersions from './UpgradeVersions.vue'
 
 const tabs = [
   ['hosts', '主机'], ['templates', '系统模板'],
   ['preinstall', '预装'], ['upgrade', '升级'], ['orders', '订单'],
   ['disks', '数据管理'], ['keys', 'SSH 公钥'],
-  ['apps', '初始化配置'], ['versions', '升级版本'], ['pricing', '费用设置'],
+  ['versions', '版本升级'], ['pricing', '费用设置'],
 ]
-const section = ref(location.hash.slice(1) === 'policies' ? 'versions' : location.hash.slice(1) || 'hosts')
+const section = ref(location.hash.slice(1) === 'policies' ? 'versions' : location.hash.slice(1) === 'apps' ? 'templates' : location.hash.slice(1) || 'hosts')
+const templateTab = ref(location.hash.slice(1) === 'apps' ? 'apps' : 'templates')
 const loading = ref(false)
 const loggedIn = ref(Boolean(localStorage.getItem('csm-token')))
 const error = ref('')
@@ -18,6 +20,7 @@ const notice = ref('')
 const rows = ref([])
 const selected = ref(null)
 const templates = ref([])
+const appRows = ref([])
 const form = ref({ kind: 'csm', action: 'buy', name: '', templateName: '', cpu: 2, memoryGi: 4, storageGi: 40, bandwidthMbps: 5, quantity: 1, unit: 'month' })
 const purchasePrices = ref(null)
 const purchaseResources = [
@@ -95,7 +98,7 @@ const title = computed(() => section.value === 'purchase' ? '购买' : tabs.find
 const resource = { hosts: 'csms', templates: 'system-templates', preinstall: 'preinstall-executions', upgrade: 'upgrade-executions', orders: 'orders', disks: 'data-disks', keys: 'ssh-keys', apps: 'preinstall-applications', versions: 'upgrade-versions' }
 
 async function login() { try { await startLogin() } catch (e) { error.value = e.message } }
-function go(id) { section.value = id; location.hash = id; selected.value = null }
+function go(id) { if (id === 'apps') { templateTab.value = 'apps'; id = 'templates' } section.value = id; location.hash = id; selected.value = null }
 function orderForDisk(action, disk) {
   form.value = { kind: 'dataDisk', action, name: disk?.metadata?.name || '', templateName: '', cpu: 0, memoryGi: 0, storageGi: action === 'expand' ? Number(disk.spec?.storageGi || 0) + 10 : action === 'buy' ? 10 : 0, bandwidthMbps: 0, quantity: 1, unit: 'month' }
   go('purchase')
@@ -196,6 +199,7 @@ async function load() {
       pricingCombinations.value = saved?.combinations?.map(item => ({ ...item })) || []
     }
     if (section.value === 'hosts') versions.value = items(await api('/upgrade-versions'))
+    if (section.value === 'templates') appRows.value = items(await api('/preinstall-applications'))
     if (section.value === 'disks') mountHosts.value = items(await api('/csms'))
   } catch (e) { error.value = e.message; rows.value = []; if (e.status === 401) loggedIn.value = false }
   finally { loading.value = false }
@@ -226,10 +230,7 @@ async function buy() {
   await run('/orders', orderRequest())
 }
 async function createConfig() {
-  const kind = resource[section.value]
-  const spec = section.value === 'apps' ? { enabled: true, order: Number(draft.value.order), shell: draft.value.shell }
-    : { templateName: draft.value.templateName, version: draft.value.version }
-  await run(`/${kind}`, { metadata: { name: draft.value.name }, spec })
+  if (await run('/preinstall-applications', { metadata: { name: draft.value.name }, spec: { enabled: true, order: Number(draft.value.order), shell: draft.value.shell } })) draft.value = { name: '', shell: '', order: 0 }
 }
 function nameOf(row) { return row?.metadata?.name || row?.name || row?.orderSn || '—' }
 function phaseOf(row) { return row.status?.phase || row.status || row.spec?.order?.status || '—' }
@@ -313,19 +314,15 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; ss
         </div>
         <button class="primary" @click="savePricing">保存费用配置</button>
       </section>
-      <section v-else-if="['apps','versions'].includes(section)" class="panel form-panel">
-        <h2>新增{{ title }}</h2><div class="grid">
-          <label>名称<input v-model.trim="draft.name" placeholder="唯一名称" /></label>
-          <label v-if="section === 'versions'">目标模板名<input v-model.trim="draft.templateName" /></label>
-          <label v-if="section === 'versions'">版本<input v-model.trim="draft.version" /></label>
-          <label v-if="section !== 'versions'">执行顺序<input v-model.number="draft.order" type="number" /></label>
-          <label v-if="section !== 'versions'">Shell 脚本<textarea v-model="draft.shell" /></label>
-        </div><button class="primary" @click="createConfig">保存配置</button>
-      </section>
       <section v-else-if="section === 'keys'" class="panel">
         <form class="key-form" @submit.prevent="run('/ssh-keys', key)"><label>名称<input v-model.trim="key.name" required /></label><label>SSH 公钥<textarea v-model.trim="key.publicKey" required placeholder="ssh-ed25519 ..." /></label><button class="primary">添加公钥</button></form>
       </section>
-      <SystemTemplates v-if="section === 'templates'" :rows="rows" :loading="loading" @saved="load" @navigate="go" />
+      <template v-if="section === 'templates'">
+        <div class="page-tabs" role="tablist" aria-label="系统模板管理"><button type="button" role="tab" :aria-selected="templateTab === 'templates'" :class="{ active: templateTab === 'templates' }" @click="templateTab = 'templates'">系统模板</button><button type="button" role="tab" :aria-selected="templateTab === 'apps'" :class="{ active: templateTab === 'apps' }" @click="templateTab = 'apps'">初始化配置</button></div>
+        <SystemTemplates v-if="templateTab === 'templates'" :rows="rows" :loading="loading" @saved="load" @navigate="go" />
+        <section v-else class="panel form-panel"><h2>新建初始化配置</h2><form @submit.prevent="createConfig"><div class="grid"><label>名称<input v-model.trim="draft.name" required maxlength="63" placeholder="唯一名称" /></label><label>执行顺序<input v-model.number="draft.order" type="number" required /></label><label class="script-field">Shell 脚本<textarea v-model="draft.shell" required /></label></div><button class="primary">保存配置</button></form><div class="table-wrap"><table><thead><tr><th>名称</th><th>执行顺序</th><th>操作</th></tr></thead><tbody><tr v-for="row in appRows" :key="nameOf(row)"><td>{{ nameOf(row) }}</td><td>{{ row.spec?.order }}</td><td class="actions"><button class="text danger" @click="remove(`/preinstall-applications/${encodeURIComponent(nameOf(row))}`)">删除</button></td></tr></tbody></table></div><div v-if="!appRows.length" class="empty">暂无初始化配置</div></section>
+      </template>
+      <UpgradeVersions v-if="section === 'versions'" :rows="rows" :loading="loading" @saved="load" />
       <section v-if="section === 'orders'" class="panel">
         <div class="panel-head"><strong>全部订单 {{ rows.length }}</strong><form class="inline-form" @submit.prevent="appliedOrderSearch = orderSearch.trim()"><label>订单号<input v-model="orderSearch" placeholder="请输入订单号" /></label><button class="light">查询</button><button type="button" class="light" @click="orderSearch = ''; appliedOrderSearch = ''">重置</button></form></div>
         <div v-if="!loading && !filteredOrders.length" class="empty">暂无订单</div>
@@ -336,7 +333,7 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; ss
         <div v-if="!loading && !rows.length" class="empty">暂无数据盘</div>
         <div v-else class="table-wrap disk-table"><table><thead><tr><th>名称 / PVC</th><th>所属主机</th><th>容量</th><th>到期时间</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td><strong>{{ nameOf(row) }}</strong><small>{{ row.status?.pvcName || 'PVC 待创建' }}</small></td><td>{{ row.spec?.attached ? row.spec?.csmName : '未挂载' }}</td><td>{{ row.spec?.storageGi || 0 }} GiB</td><td>{{ dateText(row.spec?.expireTime) }}</td><td><span class="status">{{ diskStatus(row) }}</span></td><td class="actions"><button class="text" @click="detail('data-disks', row)">详情</button><button v-if="row.spec?.paid && !row.spec?.attached && row.status?.phase === 'Available'" class="text" @click="detail('data-disks', row)">挂载</button><button v-if="row.spec?.attached" class="text" @click="detail('data-disks', row)">卸载</button><button v-if="row.spec?.paid" class="text" @click="orderForDisk('renew', row)">续费</button><button v-if="row.spec?.paid" class="text" @click="orderForDisk('expand', row)">扩容</button><button v-if="!row.spec?.attached" class="text danger" @click="deleteDisk(row)">删除</button></td></tr></tbody></table></div>
       </section>
-      <section v-else-if="!['purchase', 'pricing', 'templates'].includes(section)" class="panel">
+      <section v-else-if="!['purchase', 'pricing', 'templates', 'versions'].includes(section)" class="panel">
         <div class="panel-head"><span>{{ loading ? '正在加载…' : `${rows.length} 条记录` }}</span></div>
         <div v-if="!loading && rows.length === 0" class="empty">暂无记录。{{ section === 'hosts' ? '可从购买页面创建第一台主机。' : '' }}</div>
         <div v-else class="table-wrap"><table><thead><tr><th>名称 / 订单号</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td class="mono">{{ nameOf(row) }}</td><td><span class="status">{{ phaseOf(row) }}</span></td><td class="actions">
@@ -344,7 +341,6 @@ onMounted(async () => { try { if (await finishLogin()) loggedIn.value = true; ss
           <button v-if="section === 'hosts'" class="text" @click="run(`/csms/${nameOf(row)}/preinstall`)">预装</button>
           <button v-if="section === 'hosts'" class="text" @click="detail('csms', row)">升级</button>
           <button v-if="section === 'hosts'" class="text" @click="detail('csms', row)">终端入口</button>
-          <button v-if="['apps','versions'].includes(section)" class="text danger" @click="remove(`/${resource[section]}/${nameOf(row)}`)">删除</button>
           <button v-if="section === 'keys'" class="text danger" @click="remove(`/ssh-keys/${nameOf(row)}`)">删除</button>
         </td></tr></tbody></table></div>
       </section>
@@ -409,6 +405,10 @@ textarea { min-height: 90px; resize: vertical; }
 .pricing-combinations { max-width: 800px; margin-bottom: 20px; }
 .combination-card { margin-bottom: 12px; padding: 16px; border: 1px solid var(--color-border-2, #e5e6eb); }
 .combination-card .grid { margin-bottom: 0; }
+.page-tabs { display: flex; gap: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--color-border-2, #e5e6eb); overflow-x: auto; }
+.page-tabs button { flex: none; padding: 10px 2px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--color-text-2, #4e5969); }
+.page-tabs button.active { border-bottom-color: rgb(var(--primary-6, 22, 93, 255)); color: rgb(var(--primary-6, 22, 93, 255)); font-weight: 600; }
+.script-field { grid-column: 1 / -1; }
 .quote { color: var(--color-text-2, #4e5969); }
 .quote strong { margin-left: 8px; color: var(--color-text-1, #1d2129); font-size: 20px; }
 .table-wrap { max-width: 100%; overflow-x: auto; }
