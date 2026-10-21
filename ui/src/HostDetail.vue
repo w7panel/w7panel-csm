@@ -1,11 +1,23 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 const props = defineProps({ host: { type: Object, required: true }, versions: { type: Array, required: true }, sshHost: { type: String, default: '' }, loading: Boolean })
 const emit = defineEmits(['back', 'refresh', 'preinstall', 'upgrade', 'terminal', 'add-key', 'add-jump-key'])
 const upgradeTarget = ref('')
 const publicKey = ref('')
 const jumpKey = ref('')
+const copyMessage = ref('')
+const sshCommand = computed(() => `ssh -p ${props.host.status?.sshPort} -i ~/.ssh/csm-218 root+${props.host.status?.sshHost}@${props.sshHost}`)
+const sshConfig = computed(() => `Host csm-${props.host.metadata?.name}
+  HostName ${props.sshHost}
+  Port ${props.host.status?.sshPort}
+  User root+${props.host.status?.sshHost}
+  IdentityFile ~/.ssh/csm-218
+  IdentitiesOnly yes`)
+async function copyConnection(text) {
+  try { await navigator.clipboard.writeText(text); copyMessage.value = '已复制' }
+  catch { copyMessage.value = '无法自动复制，请选中上方内容手动复制' }
+}
 const name = row => row?.metadata?.name || '—'
 const display = value => value === undefined || value === null || value === '' ? '—' : value
 const dateText = value => { const date = new Date(value); return value && !Number.isNaN(date.getTime()) ? date.toLocaleString('zh-CN', { hour12: false }) : '—' }
@@ -47,21 +59,28 @@ function addJumpKey() {
     <div class="host-columns">
       <section class="host-section" aria-labelledby="host-connect-heading">
         <h2 id="host-connect-heading">连接与公钥</h2>
-        <dl class="host-facts"><div><dt>主机域名</dt><dd class="mono">{{ display(host.status?.sshHost) }}</dd></div><div><dt>跳板地址</dt><dd class="mono">{{ sshHost || '—' }}</dd></div><div><dt>跳板端口</dt><dd>{{ display(host.status?.sshPort) }}</dd></div></dl>
+        <dl class="host-facts"><div><dt>主机标识</dt><dd class="mono">{{ display(host.status?.sshHost) }}</dd></div><div><dt>网关地址</dt><dd class="mono">{{ sshHost || '—' }}</dd></div><div><dt>SSH 端口</dt><dd>{{ display(host.status?.sshPort) }}</dd></div></dl>
         <template v-if="host.status?.sshHost">
-          <p class="host-section-note">1. 在发起 SSH 的电脑上生成密钥；已有 ~/.ssh/csm-218 时跳过生成，避免覆盖私钥。</p>
+          <p class="host-section-note">1. 在自己的电脑上准备 SSH 密钥；已有 ~/.ssh/csm-218 时跳过生成，避免覆盖私钥。</p>
           <pre class="host-command mono">ssh-keygen -t ed25519 -f ~/.ssh/csm-218 -C csm-218
 cat ~/.ssh/csm-218.pub</pre>
-          <p class="host-section-note">2. 把上面 cat 输出的公钥分别添加到下方的跳板和主机。私钥只留在自己的电脑上。</p>
-          <p class="host-section-note">3. 在同一个终端加载私钥：</p>
-          <pre class="host-command mono">eval "$(ssh-agent -s)"
-ssh-add ~/.ssh/csm-218</pre>
-          <p class="host-section-note">4. 连接这台主机：</p>
+          <p class="host-section-note">2. 将公钥添加到下方。私钥只保存在自己的电脑上。</p>
+          <form class="host-key-form" @submit.prevent="addJumpKey"><label>SSH 登录公钥<textarea v-model="jumpKey" required rows="3" placeholder="粘贴 ssh-ed25519 公钥" /></label><button class="light" :disabled="loading || !jumpKey.trim()">添加登录公钥</button></form>
+          <template v-if="sshHost && host.status?.sshPort">
+            <p class="host-section-note">3. 连接主机：</p>
+            <pre class="host-command mono">{{ sshCommand }}</pre>
+            <button class="light" @click="copyConnection(sshCommand)">复制连接命令</button>
+            <p class="host-section-note">使用 VS Code Remote SSH 时，将以下配置添加到 ~/.ssh/config，再选择对应的 CSM 主机连接：</p>
+            <pre class="host-command mono">{{ sshConfig }}</pre>
+            <button class="light" @click="copyConnection(sshConfig)">复制 SSH 配置</button>
+            <p role="status">{{ copyMessage }}</p>
+          </template>
+          <p v-else class="host-section-note">SSH 入口尚未就绪，请刷新主机状态后重试。</p>
         </template>
-        <p v-if="sshHost && host.status?.sshHost && host.status?.sshPort" class="host-command mono">ssh -J jump@{{ sshHost }}:{{ host.status.sshPort }} root@{{ host.status.sshHost }}</p>
-        <p v-else-if="sshHost && host.status?.sshPort" class="host-command mono">ssh -p {{ host.status.sshPort }} root@{{ sshHost }}</p>
-        <form class="host-key-form" @submit.prevent="addJumpKey"><label>添加跳板公钥<textarea v-model="jumpKey" required rows="3" placeholder="粘贴 ssh-ed25519 公钥" /></label><button class="light">添加到跳板</button></form>
-        <form class="host-key-form" @submit.prevent="addKey"><label>添加主机公钥<textarea v-model="publicKey" required rows="3" placeholder="粘贴 ssh-ed25519 公钥" /></label><button class="light">添加到主机</button></form>
+        <template v-else>
+          <p v-if="sshHost && host.status?.sshPort" class="host-command mono">ssh -p {{ host.status.sshPort }} root@{{ sshHost }}</p>
+          <form class="host-key-form" @submit.prevent="addKey"><label>SSH 登录公钥<textarea v-model="publicKey" required rows="3" placeholder="粘贴 ssh-ed25519 公钥" /></label><button class="light" :disabled="loading || !publicKey.trim()">添加登录公钥</button></form>
+        </template>
       </section>
       <section class="host-section" aria-labelledby="host-operation-heading">
         <h2 id="host-operation-heading">主机操作</h2>

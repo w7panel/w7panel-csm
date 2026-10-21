@@ -31,6 +31,7 @@ type CsmReconciler struct {
 	PortEnd            int32
 	JumpPort           int32
 	SSHDomainSuffix    string
+	SSHCAPublicKey     []byte
 }
 
 func (r *CsmReconciler) setOwner(owner *api.Csm, obj client.Object) error {
@@ -38,7 +39,7 @@ func (r *CsmReconciler) setOwner(owner *api.Csm, obj client.Object) error {
 }
 
 func (r *CsmReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).For(&api.Csm{}).Owns(&appsv1.Deployment{}).Owns(&corev1.PersistentVolumeClaim{}).Watches(&api.DataDisk{}, handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []ctrl.Request {
+	return ctrl.NewControllerManagedBy(mgr).For(&api.Csm{}).Owns(&appsv1.Deployment{}).Owns(&corev1.PersistentVolumeClaim{}).Owns(&corev1.Secret{}).Watches(&api.DataDisk{}, handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []ctrl.Request {
 		d := obj.(*api.DataDisk)
 		if d.Spec.CsmName == "" {
 			return nil
@@ -156,9 +157,17 @@ func (r *CsmReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 			mounts = append(mounts, hostruntime.DiskMount{Name: d.Name, PVCName: d.Status.PVCName, Path: d.Spec.MountPath})
 		}
 	}
+	if r.JumpPort != 0 {
+		if err := r.ensureSSHIdentity(ctx, host); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 	dep, err := hostruntime.Deployment(host, image, mounts)
 	if err != nil {
 		return r.hostStatus(ctx, host, "Failed", err.Error(), port)
+	}
+	if r.JumpPort != 0 {
+		hostruntime.ConfigureSSHGateway(dep, host)
 	}
 	if err := r.ensureDeployment(ctx, host, dep); err != nil {
 		return ctrl.Result{}, err

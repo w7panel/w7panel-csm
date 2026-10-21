@@ -52,6 +52,8 @@ spec:
               value: {{ .Values.ssh.publicHost | quote }}
             - name: CSM_SSH_JUMP_ADDR
               value: {{ ternary (printf ":%v" .Values.ssh.listenPort) "" .Values.ssh.jumpEnabled | quote }}
+            - name: CSM_SSH_PREPARE_ONLY
+              value: {{ .Values.ssh.prepareOnly | quote }}
             - name: CSM_SSH_JUMP_PORT
               value: {{ .Values.ssh.jumpPort | quote }}
             - name: CSM_SSH_DOMAIN_SUFFIX

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	api "github.com/w7panel/w7panel-csm/api/v1alpha1"
+	"github.com/w7panel/w7panel-csm/pkg/sshidentity"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -89,3 +90,18 @@ func Service(host *api.Csm) *corev1.Service {
 	return &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: host.Name, Namespace: host.Namespace}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP, Selector: map[string]string{"csm.w7.cc/host": host.Name}, Ports: []corev1.ServicePort{{Name: "ssh", Port: 22, TargetPort: intstr.FromInt32(2222)}}}}
 }
 func ptr(s string) *string { return &s }
+
+// ConfigureSSHGateway mounts only this host's identity and the public user CA.
+func ConfigureSSHGateway(dep *appsv1.Deployment, host *api.Csm) {
+	mode := int32(0400)
+	dep.Spec.Template.Spec.Volumes = append(dep.Spec.Template.Spec.Volumes, corev1.Volume{Name: "ssh-identity", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: sshidentity.SecretName(host), DefaultMode: &mode}}})
+	container := &dep.Spec.Template.Spec.Containers[0]
+	container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "ssh-identity", MountPath: "/etc/csm-ssh", ReadOnly: true})
+	container.Args[0] = strings.Replace(container.Args[0], "ssh-keygen -A", `# Secret mount directories can be 01777; OpenSSH requires a non-writable principal path.
+install -o root -g root -m 600 /etc/csm-ssh/principals /etc/ssh/csm-principals
+printf 'HostKey /etc/csm-ssh/host-key\nTrustedUserCAKeys /etc/csm-ssh/user-ca.pub\nAuthorizedPrincipalsFile /etc/ssh/csm-principals\nAllowUsers root\nAllowTcpForwarding local\nPermitOpen localhost:* 127.0.0.1:* [::1]:*\nAllowAgentForwarding no\nX11Forwarding no\n' >> /etc/ssh/sshd_config.d/99-csm.conf`, 1)
+	container.Args[0] = strings.Replace(container.Args[0], "/usr/sbin/sshd -t", `/usr/sbin/sshd -t
+/usr/sbin/sshd -T | grep -qx 'trustedusercakeys /etc/csm-ssh/user-ca.pub'
+/usr/sbin/sshd -T | grep -qx 'authorizedprincipalsfile /etc/ssh/csm-principals'
+/usr/sbin/sshd -T | grep -qx 'hostkey /etc/csm-ssh/host-key'`, 1)
+}

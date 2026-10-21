@@ -44,14 +44,59 @@ The deployed manager requires in-cluster Kubernetes credentials and Helm values 
 `oidc.discoveryURL`, `oidc.audience`, `oidc.clientID`, `oidc.redirectURI`,
 `ssh.publicHost`, `ssh.domainSuffix`, `ssh.jumpPort`, `payment.productID`,
 `payment.callbackHost`.
-With `ssh.jumpEnabled=true`, one LoadBalancer Service exposes the manager's SSH
-jump server at `ssh.publicHost:ssh.jumpPort`. Each host keeps an internal
-ClusterIP Service on port 22. Add the jump key and host key separately in the
-host detail page, then connect with
-`ssh -J jump@csm.fan.b2.sz.w7.com:30000 root@<host.status.sshHost>`.
-The jump server authenticates the key for the requested host and forwards only
-to that host's internal port 22. Existing per-host Gateway listeners and
-TCPRoutes are removed as hosts reconcile.
+With `ssh.jumpEnabled=true`, one LoadBalancer Service exposes the CSM SSH gateway
+at `ssh.publicHost:ssh.jumpPort`. Add your public key once in the host detail page:
+
+```sh
+ssh -p 30000 -i ~/.ssh/csm-218 root+<host.status.sshHost>@csm.fan.b2.sz.w7.com
+```
+
+The gateway authorizes the key for that specific, paid, unexpired Ready host, then
+uses a five-minute SSH user certificate to connect as root. The certificate is
+restricted to the host UID. Host Services still map port 22 to container port 2222.
+Shell, commands, SFTP, both SCP protocols and target-loopback forwarding are supported.
+Remote listeners, agent forwarding, X11 and environment requests are rejected.
+SSH signal requests preserve the backend response: the current OpenSSH image rejects
+protocol signals for root sessions; interactive Ctrl+C works through the PTY.
+Use the SSH configuration shown in the host page for VS Code Remote SSH (TCP mode;
+Unix-socket mode is not supported). Only `localhost`, `127.0.0.1` and `::1` forwarding
+destinations are accepted, and they refer to the target host, not the gateway.
+This limits gateway forwarding; a root shell can still originate its own network connections.
+
+The existing `jumpPublicKeys` field and `/jump-keys` endpoint now mean gateway login
+keys. Existing `sshPublicKeys` remain installed for direct internal access. The old
+`ssh -J ...` entrypoint is replaced. Each process allows 32 connections per source
+IP, 512 in total, and 32 concurrent channels per connection. NAT clients share the
+source-IP limit. Each new channel rechecks authorization; revoking a key prevents
+new channels but does not terminate an already running shell. Certificate expiry
+also does not terminate established connections. Logs contain host UID, source,
+public-key fingerprint, result and duration, never commands or session contents.
+
+### SSH gateway migration
+
+Schedule maintenance: host Deployments use Recreate, so adding CA trust and fixed
+host keys restarts hosts and interrupts existing sessions. Back up the gateway
+identity Secret `csm-ssh-jump-hostkey`, the user CA Secret `csm-ssh-user-ca` in the
+pricing namespace, and per-host `csm-ssh-<UID>` Secrets. The gateway fingerprint
+is retained; host keys become fixed per-host identities pinned by the gateway.
+Existing internal direct clients may need to verify the new host fingerprint.
+
+1. Upgrade with `ssh.jumpEnabled=true,ssh.prepareOnly=true`. This runs host
+   reconciliation and prepares Secrets/CA trust, but does not listen for SSH.
+   Wait for all affected host Deployments to finish rolling out and return Ready.
+2. Upgrade with `ssh.prepareOnly=false` to open the new direct-login gateway.
+   Verify a test host using the new command before ending maintenance.
+
+For a non-Helm process the equivalent flag is `CSM_SSH_PREPARE_ONLY=true`.
+To roll back, restore the previous release and let host Deployments reconcile;
+clients must return to the old ProxyJump command and require both legacy key entries.
+Do not delete the identity Secrets during rollback. CA rotation is a maintenance
+operation: replace the CA Secret, restart the manager and wait for public trust
+updates before admitting new connections. Keep CA private keys out of host Pods.
+The gateway shares the manager ServiceAccount and its existing cluster-wide Secret
+permissions; restrict access to this workload and its service account. A compromised
+gateway/CA can impersonate users to hosts, and the proxy sees session plaintext.
+
 By default, Discovery, issuer and JWKS URLs may use HTTP only on a cluster
 Service or loopback host; the browser authorization endpoint and redirect URI
 must use HTTPS. `CSM_OIDC_ALLOW_INSECURE_HTTP=true` permits HTTP for local

@@ -29,6 +29,8 @@ ssh:
   gatewayServiceName: higress-gateway
   publicHost: csm.fan.b2.sz.w7.com
   jumpEnabled: true
+  # Prepare host CA trust during maintenance before opening the new SSH gateway.
+  prepareOnly: false
   jumpPort: 30000
   listenPort: 2222
   domainSuffix: fan.b2.sz.w7.com

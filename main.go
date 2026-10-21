@@ -17,7 +17,9 @@ import (
 	"github.com/w7panel/w7panel-csm/pkg/httpapi"
 	"github.com/w7panel/w7panel-csm/pkg/integration"
 	"github.com/w7panel/w7panel-csm/pkg/order"
+	"github.com/w7panel/w7panel-csm/pkg/sshidentity"
 	"github.com/w7panel/w7panel-csm/pkg/sshjump"
+	"golang.org/x/crypto/ssh"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -193,6 +195,14 @@ func run() error {
 		return err
 	}
 	host := &controllers.CsmReconciler{Client: mgr.GetClient(), Scheme: scheme, GatewayNamespace: gatewayNamespace, GatewayName: gatewayName, GatewayServiceName: gatewayServiceName, PortStart: int32(portStart), PortEnd: int32(portEnd), JumpPort: int32(jumpPort), SSHDomainSuffix: jumpSuffix}
+	var userCA ssh.Signer
+	if jumpAddr != "" {
+		userCA, err = sshidentity.LoadCA(context.Background(), kube, pricingNamespace)
+		if err != nil {
+			return err
+		}
+		host.SSHCAPublicKey = ssh.MarshalAuthorizedKey(userCA.PublicKey())
+	}
 	if err := host.SetupWithManager(mgr); err != nil {
 		return err
 	}
@@ -240,12 +250,12 @@ func run() error {
 	})); err != nil {
 		return err
 	}
-	if jumpAddr != "" {
+	if jumpAddr != "" && os.Getenv("CSM_SSH_PREPARE_ONLY") != "true" {
 		signer, err := sshjump.LoadHostKey(context.Background(), kube, pricingNamespace)
 		if err != nil {
 			return err
 		}
-		jump := &sshjump.Server{Client: mgr.GetClient(), Suffix: jumpSuffix, Signer: signer}
+		jump := &sshjump.Server{Client: mgr.GetAPIReader(), Suffix: jumpSuffix, Signer: signer, CA: userCA}
 		if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error { return jump.Serve(ctx, jumpAddr) })); err != nil {
 			return err
 		}
