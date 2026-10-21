@@ -4,6 +4,11 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
   base: './',
+  server: {
+    proxy: {
+      '/csm-api': { target: 'http://172.16.1.3:8082', changeOrigin: true, ws: true },
+    },
+  },
   plugins: [vue(), VitePWA({
     injectRegister: null,
     registerType: 'autoUpdate',

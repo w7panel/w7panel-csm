@@ -94,7 +94,6 @@ function closeTerminal() {
   else location.replace(`#hosts/${encodeURIComponent(hostRouteName.value)}`)
 }
 const title = computed(() => section.value === 'purchase' ? '购买' : tabs.find(([id]) => id === section.value)?.[1] || '主机')
-const pageDescription = { hosts: '查看实例状态和资源配置，进入详情管理连接与升级。', disks: '查看数据盘状态，管理挂载与容量。', orders: '跟踪购买、续费和扩容订单。' }
 const resource = { hosts: 'csms', templates: 'system-templates', preinstall: 'preinstall-executions', upgrade: 'upgrade-executions', orders: 'orders', disks: 'data-disks', apps: 'preinstall-applications', versions: 'upgrade-versions' }
 
 async function login() { try { await startLogin() } catch (e) { error.value = e.message } }
@@ -300,21 +299,20 @@ onUnmounted(() => { window.removeEventListener('hashchange', syncHostRoute) })
 <template>
   <div class="shell">
     <aside class="rail" aria-label="CSM 功能导航">
-      <div class="brand"><span class="brand-mark" aria-hidden="true">C</span><span class="brand-type"><strong>CSM</strong><small>云资源控制台</small></span></div>
-      <p class="rail-label">工作空间</p>
+      <div class="brand">CSM 管理</div>
       <a-menu class="app-menu" :selected-keys="[section === 'purchase' ? (form.kind === 'dataDisk' ? 'disks' : 'hosts') : section]" @menu-item-click="go">
         <a-menu-item v-for="[id, label] in tabs" :key="id">{{ label }}</a-menu-item>
       </a-menu>
     </aside>
-    <div class="mobile-bar"><button type="button" class="mobile-menu-trigger" aria-label="打开导航菜单" @click="mobileMenuOpen = true"><span aria-hidden="true">☰</span></button><span class="brand-mark" aria-hidden="true">C</span><strong>CSM</strong><span class="mobile-page-title">{{ title }}</span></div>
+    <div class="mobile-bar"><button type="button" class="mobile-menu-trigger" aria-label="打开导航菜单" @click="mobileMenuOpen = true">☰</button><strong>CSM 管理</strong></div>
     <a-drawer v-model:visible="mobileMenuOpen" title="CSM 管理" placement="left" width="min(280px, 88vw)" :footer="false" :unmount-on-close="true">
       <a-menu class="app-menu" :selected-keys="[section === 'purchase' ? (form.kind === 'dataDisk' ? 'disks' : 'hosts') : section]" @menu-item-click="go">
         <a-menu-item v-for="[id, label] in tabs" :key="id">{{ label }}</a-menu-item>
       </a-menu>
     </a-drawer>
     <main>
-      <a-breadcrumb class="breadcrumb"><a-breadcrumb-item>CSM 管理</a-breadcrumb-item><a-breadcrumb-item>{{ title }}</a-breadcrumb-item><a-breadcrumb-item v-if="hostRouteName">{{ hostRouteName }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb>
-      <header v-if="!hostRouteName" class="page-header"><div class="page-title"><span class="page-kicker">CSM / 资源管理</span><h1>{{ title }}</h1><p v-if="pageDescription[section]">{{ pageDescription[section] }}</p></div><div class="header-actions"><a-button v-if="section === 'hosts'" type="primary" @click="go('purchase')">＋ 购买资源</a-button><a-button v-if="loggedIn" @click="load">刷新</a-button></div></header>
+      <a-breadcrumb class="breadcrumb"><a-breadcrumb-item>资源管理</a-breadcrumb-item><a-breadcrumb-item>{{ title }}</a-breadcrumb-item><a-breadcrumb-item v-if="hostRouteName">{{ hostRouteName }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb>
+      <div v-if="!hostRouteName && loggedIn" class="page-actions-row"><a-button v-if="section === 'hosts'" type="primary" @click="go('purchase')">＋ 购买资源</a-button><a-button class="refresh-action" @click="load">刷新</a-button></div>
       <p v-if="error" class="alert" role="alert">{{ error }}</p><p v-if="notice" class="notice" role="status">{{ notice }} <a v-if="payment?.ticket" :href="`https://ip.w7.cc/pay/${encodeURIComponent(payment.ticket)}?header=false&footer=false`" target="_blank" rel="noopener noreferrer">前往 W7 云支付 ↗</a></p>
       <section v-if="!loggedIn" class="panel"><h2>登录 CSM</h2><p class="hint">使用 W7Panel 账户授权后管理云主机。</p><button class="primary" @click="login">登录</button></section>
       <template v-else><section v-if="section === 'purchase'" class="panel purchase-page">
@@ -367,7 +365,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', syncHostRoute) })
       <template v-if="section === 'templates'">
         <div class="page-tabs" role="tablist" aria-label="系统模板管理"><button type="button" role="tab" :aria-selected="templateTab === 'templates'" :class="{ active: templateTab === 'templates' }" @click="templateTab = 'templates'">系统模板</button><button type="button" role="tab" :aria-selected="templateTab === 'apps'" :class="{ active: templateTab === 'apps' }" @click="templateTab = 'apps'">初始化配置</button></div>
         <SystemTemplates v-if="templateTab === 'templates'" :rows="rows" :loading="loading" @saved="load" @navigate="go" />
-        <section v-else class="panel form-panel"><div class="panel-head"><h2>初始化配置</h2><button class="primary" @click="openAppDrawer">＋ 新建初始化配置</button></div><div class="table-wrap"><table><thead><tr><th>名称</th><th>执行顺序</th><th>操作</th></tr></thead><tbody><tr v-for="row in appRows" :key="nameOf(row)"><td>{{ nameOf(row) }}</td><td>{{ row.spec?.order }}</td><td class="actions"><button class="text danger" @click="remove(`/preinstall-applications/${encodeURIComponent(nameOf(row))}`)">删除</button></td></tr></tbody></table></div><div v-if="!appRows.length" class="empty">暂无初始化配置</div></section>
+        <section v-else class="panel form-panel"><div class="panel-head"><h2>初始化配置</h2><button class="primary" @click="openAppDrawer">＋ 新建初始化配置</button></div><div class="table-wrap app-config-table"><table><thead><tr><th>名称</th><th>执行顺序</th><th>操作</th></tr></thead><tbody><tr v-for="row in appRows" :key="nameOf(row)"><td>{{ nameOf(row) }}</td><td>{{ row.spec?.order }}</td><td class="actions"><button class="text danger" @click="remove(`/preinstall-applications/${encodeURIComponent(nameOf(row))}`)">删除</button></td></tr></tbody></table></div><div v-if="!appRows.length" class="empty">暂无初始化配置</div></section>
       </template>
       <a-drawer v-model:visible="appDrawerOpen" title="新建初始化配置" width="min(560px, 100vw)" :footer="false" :unmount-on-close="true">
         <form @submit.prevent="createConfig"><p v-if="appError" class="alert" role="alert">{{ appError }}</p><div class="grid"><label>名称<input v-model.trim="draft.name" required maxlength="63" placeholder="唯一名称" /></label><label>执行顺序<input v-model.number="draft.order" type="number" required /></label><label class="script-field">Shell 脚本<textarea v-model="draft.shell" required rows="10" /></label></div><div class="app-drawer-actions"><button type="button" class="light" @click="appDrawerOpen = false">取消</button><button class="primary" :disabled="appSaving">{{ appSaving ? '保存中…' : '保存配置' }}</button></div></form>
@@ -386,24 +384,12 @@ onUnmounted(() => { window.removeEventListener('hashchange', syncHostRoute) })
       <section v-else-if="section === 'hosts' && !hostRouteName" class="panel">
         <div class="panel-head"><span>{{ loading ? '正在加载…' : `${rows.length} 台主机` }}</span></div>
         <div v-if="!loading && !rows.length" class="empty">暂无记录。可从购买页面创建第一台主机。</div>
-        <div v-else class="host-card-grid">
-          <article v-for="row in rows" :key="nameOf(row)" class="host-card">
-            <div class="host-card-heading"><a class="host-card-name mono" :href="`#hosts/${encodeURIComponent(nameOf(row))}`" @click.prevent="openHost(row)">{{ nameOf(row) }}</a><span class="status">{{ phaseOf(row) }}</span></div>
-            <p class="host-card-template">系统模板：{{ row.spec?.templateName || '—' }}</p>
-            <dl class="host-card-resources">
-              <div><dt>CPU</dt><dd>{{ row.spec?.cpu == null ? '—' : `${row.spec.cpu} 核` }}</dd></div>
-              <div><dt>内存</dt><dd>{{ row.spec?.memory || '—' }}</dd></div>
-              <div><dt>系统盘</dt><dd>{{ row.spec?.systemDiskGi == null ? '—' : `${row.spec.systemDiskGi} GiB` }}</dd></div>
-              <div><dt>带宽</dt><dd>{{ row.spec?.bandwidthMbps == null ? '—' : `${row.spec.bandwidthMbps} Mbps` }}</dd></div>
-            </dl>
-            <div class="host-card-actions"><button class="text" @click="run(`/csms/${encodeURIComponent(nameOf(row))}/preinstall`)">预装</button><button class="light" @click="openHost(row)">查看详情</button></div>
-          </article>
-        </div>
+        <div v-else class="table-wrap host-table"><table><thead><tr><th>主机名称</th><th>系统模板</th><th>CPU</th><th>内存</th><th>系统盘</th><th>带宽</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td><a class="table-link mono" :href="`#hosts/${encodeURIComponent(nameOf(row))}`" @click.prevent="openHost(row)">{{ nameOf(row) }}</a></td><td><span class="host-cell-label">系统模板</span>{{ row.spec?.templateName || '—' }}</td><td><span class="host-cell-label">CPU</span>{{ row.spec?.cpu == null ? '—' : `${row.spec.cpu} 核` }}</td><td><span class="host-cell-label">内存</span>{{ row.spec?.memory || '—' }}</td><td><span class="host-cell-label">系统盘</span>{{ row.spec?.systemDiskGi == null ? '—' : `${row.spec.systemDiskGi} GiB` }}</td><td><span class="host-cell-label">带宽</span>{{ row.spec?.bandwidthMbps == null ? '—' : `${row.spec.bandwidthMbps} Mbps` }}</td><td><span class="status">{{ phaseOf(row) }}</span></td><td class="actions"><button class="text" @click="run(`/csms/${encodeURIComponent(nameOf(row))}/preinstall`)">预装</button><button class="text" @click="openHost(row)">详情</button></td></tr></tbody></table></div>
       </section>
       <section v-else-if="!hostRouteName && !['purchase', 'pricing', 'templates', 'versions', 'hosts'].includes(section)" class="panel">
         <div class="panel-head"><span>{{ loading ? '正在加载…' : `${rows.length} 条记录` }}</span></div>
         <div v-if="!loading && rows.length === 0" class="empty">暂无记录。</div>
-        <div v-else class="table-wrap"><table><thead><tr><th>名称 / 订单号</th><th>状态</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td class="mono">{{ nameOf(row) }}</td><td><span class="status">{{ phaseOf(row) }}</span></td></tr></tbody></table></div>
+        <div v-else class="table-wrap execution-table"><table><thead><tr><th>名称 / 订单号</th><th>状态</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td class="mono">{{ nameOf(row) }}</td><td><span class="status">{{ phaseOf(row) }}</span></td></tr></tbody></table></div>
       </section>
       <HostDetail v-if="section === 'hosts' && hostRouteName && !terminalPage && selected" :host="selected" :versions="versions" :ssh-host="sshHost" :loading="hostLoading" @back="go('hosts')" @refresh="loadHost(hostRouteName)" @preinstall="run(`/csms/${encodeURIComponent(hostRouteName)}/preinstall`)" @upgrade="versionName => run(`/csms/${encodeURIComponent(hostRouteName)}/upgrade`, { versionName })" @terminal="openTerminal" @add-key="async (publicKey, done) => { if ((await run(`/csms/${encodeURIComponent(hostRouteName)}/ssh-keys`, { publicKey })) !== undefined) done() }" @add-jump-key="async (publicKey, done) => { if ((await run(`/csms/${encodeURIComponent(hostRouteName)}/jump-keys`, { publicKey })) !== undefined) done() }" />
       <section v-else-if="section === 'hosts' && hostRouteName && !terminalPage && hostLoading" class="panel"><p class="hint">正在加载主机详情…</p></section>
@@ -416,103 +402,70 @@ onUnmounted(() => { window.removeEventListener('hashchange', syncHostRoute) })
 
 <style>
 :root {
-  font-family: 'Avenir Next', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  color: #172b4d;
-  background: #f4f7fb;
+  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  color: var(--color-text-1, #1d2129);
+  background: var(--color-fill-1, #f7f8fa);
   font-size: 14px;
-  line-height: 1.5;
-  font-synthesis: none;
-  --csm-ink: #172b4d;
-  --csm-muted: #60718a;
-  --csm-blue: #165dff;
-  --csm-border: #dce4ef;
-  --csm-surface: #ffffff;
-  --csm-canvas: #f4f7fb;
 }
 * { box-sizing: border-box; }
 body { margin: 0; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px solid rgb(var(--primary-6, 22, 93, 255)); outline-offset: 2px; }
-.shell { display: flex; min-height: 100vh; background: var(--csm-canvas); }
-.rail { position: sticky; top: 0; flex: 0 0 220px; height: 100vh; min-height: 620px; background: #fbfcff; border-right: 1px solid var(--csm-border); }
-.brand { display: flex; align-items: center; gap: 12px; min-height: 80px; padding: 16px 20px; border-bottom: 1px solid var(--csm-border); }
-.brand-mark { display: inline-grid; flex: none; place-items: center; width: 36px; height: 36px; border-radius: 9px; background: var(--csm-blue); color: #fff; font: 700 21px/1 'Avenir Next', 'Segoe UI', sans-serif; letter-spacing: -.08em; box-shadow: 0 6px 16px rgba(22, 93, 255, .18); }
-.brand-type { display: flex; flex-direction: column; line-height: 1.25; }
-.brand-type strong { color: var(--csm-ink); font-size: 17px; letter-spacing: .05em; }
-.brand-type small { margin-top: 4px; color: var(--csm-muted); font-size: 11px; letter-spacing: .05em; }
-.rail-label { margin: 24px 20px 8px; color: #8998aa; font-size: 11px; font-weight: 700; letter-spacing: .14em; }
-.app-menu { padding: 4px 10px; background: transparent; }
-.app-menu .arco-menu-item { height: 42px; margin: 3px 0; border-radius: 7px; color: var(--csm-muted); font-weight: 500; }
-.app-menu .arco-menu-item:hover { background: #f0f5ff; color: var(--csm-blue); }
-.app-menu .arco-menu-selected { position: relative; background: #eaf1ff; color: var(--csm-blue); font-weight: 700; }
-.app-menu .arco-menu-selected::before { content: ''; position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px; border-radius: 0 3px 3px 0; background: var(--csm-blue); }
+.shell { display: flex; min-height: 100vh; background: var(--color-fill-1, #f7f8fa); }
+.rail { flex: 0 0 208px; min-height: 100vh; background: var(--color-bg-2, #fff); border-right: 1px solid var(--color-border-2, #e5e6eb); }
+.brand { display: flex; align-items: center; height: 56px; padding: 0 20px; border-bottom: 1px solid var(--color-border-2, #e5e6eb); color: var(--color-text-1, #1d2129); font-size: 16px; font-weight: 600; }
+.app-menu { padding: 8px; background: transparent; }
 .mobile-bar { display: none; }
-main { flex: 1; min-width: 0; min-height: 100vh; padding: 24px clamp(22px, 3vw, 48px) 48px; background: var(--csm-canvas); }
-.breadcrumb { margin-bottom: 24px; overflow-x: auto; white-space: nowrap; }
-.page-header { display: flex; align-items: end; justify-content: space-between; gap: 20px; min-height: 80px; margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--csm-border); }
-.page-title { min-width: 0; }
-.page-kicker { display: block; margin-bottom: 4px; color: var(--csm-blue); font-size: 11px; font-weight: 700; letter-spacing: .12em; }
-.page-title p { margin: 5px 0 0; color: var(--csm-muted); }
-.header-actions { display: flex; align-items: center; gap: 8px; }
-h1 { margin: 0; color: var(--csm-ink); font-size: 28px; font-weight: 700; line-height: 1.25; letter-spacing: -.03em; }
-h2 { margin: 0 0 16px; color: var(--csm-ink); font-size: 16px; font-weight: 700; }
-.panel { min-width: 0; margin-bottom: 20px; padding: 22px; border: 1px solid var(--csm-border); border-radius: 10px; background: var(--csm-surface); box-shadow: 0 4px 20px rgba(35, 58, 94, .03); }
-.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 16px; color: var(--csm-muted); font-size: 13px; }
-.light, .primary { min-height: 36px; padding: 0 15px; border: 1px solid var(--csm-border); border-radius: 6px; background: #fff; color: var(--csm-ink); font-weight: 600; }
-.light:hover { border-color: #abc7ff; background: #f4f8ff; }
-.primary { border-color: var(--csm-blue); background: var(--csm-blue); color: #fff; }
-.primary:hover { border-color: #0f4eda; background: #0f4eda; }
+main { flex: 1; min-width: 0; min-height: 100vh; padding: 20px; background: var(--color-fill-1, #f7f8fa); }
+.breadcrumb { margin-bottom: 20px; }
+.page-actions-row { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+.refresh-action { margin-left: auto; }
+h1 { margin: 0; color: var(--color-text-1, #1d2129); font-size: 20px; font-weight: 600; line-height: 32px; }
+h2 { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
+.panel { min-width: 0; margin-bottom: 20px; padding: 20px; background: var(--color-bg-2, #fff); }
+.panel-head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 12px; color: var(--color-text-3, #86909c); font-size: 13px; }
+.light, .primary { min-height: 32px; padding: 0 15px; border: 1px solid var(--color-border-2, #e5e6eb); border-radius: 2px; background: var(--color-fill-2, #f2f3f5); color: var(--color-text-1, #1d2129); }
+.light:hover { background: var(--color-fill-3, #e5e6eb); }
+.primary { border-color: rgb(var(--primary-6, 22, 93, 255)); background: rgb(var(--primary-6, 22, 93, 255)); color: #fff; }
+.primary:hover { background: rgb(var(--primary-5, 64, 128, 255)); }
 .primary:disabled, .light:disabled { opacity: .5; cursor: not-allowed; }
 .text { min-height: 30px; padding: 3px 5px; border: 0; background: transparent; color: rgb(var(--primary-6, 22, 93, 255)); }
 .text:hover, .table-link:hover { text-decoration: underline; }
 .danger { color: rgb(var(--danger-6, 245, 63, 63)); }
-.alert, .notice { margin: 0 0 16px; padding: 12px 16px; border-radius: 7px; }
+.alert, .notice { margin: 0 0 16px; padding: 10px 16px; border-radius: 2px; }
 .alert { background: var(--color-danger-light-1, #ffece8); color: rgb(var(--danger-6, 245, 63, 63)); }
 .notice { background: var(--color-success-light-1, #e8ffea); color: var(--color-text-1, #1d2129); }
 .notice a, .table-link { color: rgb(var(--primary-6, 22, 93, 255)); }
-.hint { margin: 0 0 20px; color: var(--csm-muted); }
+.hint { margin: 0 0 20px; color: var(--color-text-3, #86909c); }
 .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; max-width: 800px; margin-bottom: 20px; }
-label { display: flex; flex-direction: column; gap: 7px; color: var(--csm-muted); font-weight: 500; }
-input, select, textarea { width: 100%; min-width: 0; min-height: 36px; padding: 6px 11px; border: 1px solid var(--csm-border); border-radius: 6px; background: #f9fbfe; color: var(--csm-ink); }
-input:hover, select:hover, textarea:hover { border-color: #aebfd4; background: #fff; }
-input:focus, select:focus, textarea:focus { border-color: var(--csm-blue); background: #fff; }
+label { display: flex; flex-direction: column; gap: 7px; color: var(--color-text-2, #4e5969); }
+input, select, textarea { width: 100%; min-width: 0; min-height: 32px; padding: 5px 10px; border: 1px solid transparent; border-radius: 2px; background: var(--color-fill-2, #f2f3f5); color: var(--color-text-1, #1d2129); }
+input:hover, select:hover, textarea:hover { background: var(--color-fill-3, #e5e6eb); }
+input:focus, select:focus, textarea:focus { border-color: rgb(var(--primary-6, 22, 93, 255)); background: var(--color-bg-2, #fff); }
 textarea { min-height: 90px; resize: vertical; }
-.form-panel { padding: 22px; }
+.form-panel { padding: 20px; }
 .pricing-combinations { max-width: 1100px; margin-bottom: 20px; }
 .pricing-period-create { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
 .pricing-period-create label { width: 120px; }
 .combination-list table { min-width: 820px; }
 .combination-list input { min-width: 80px; }
-.page-tabs { display: flex; gap: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--csm-border); overflow-x: auto; }
-.page-tabs button { flex: none; min-height: 44px; padding: 10px 2px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--csm-muted); font-weight: 600; }
+.page-tabs { display: flex; gap: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--color-border-2, #e5e6eb); overflow-x: auto; }
+.page-tabs button { flex: none; padding: 10px 2px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--color-text-2, #4e5969); }
 .page-tabs button.active { border-bottom-color: rgb(var(--primary-6, 22, 93, 255)); color: rgb(var(--primary-6, 22, 93, 255)); font-weight: 600; }
 .script-field { grid-column: 1 / -1; }
 .app-drawer-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .quote { color: var(--color-text-2, #4e5969); }
 .quote strong { margin-left: 8px; color: var(--color-text-1, #1d2129); font-size: 20px; }
-.table-wrap { max-width: 100%; overflow-x: auto; border: 1px solid var(--csm-border); border-radius: 7px; }
+.table-wrap { max-width: 100%; overflow-x: auto; }
 .table-wrap .arco-table { min-width: 560px; }
-.host-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 16px; }
-.host-card { min-width: 0; padding: 20px; border: 1px solid var(--csm-border); border-radius: 9px; background: #fff; transition: border-color .16s ease, box-shadow .16s ease; }
-.host-card:hover { border-color: #acc6f9; box-shadow: 0 12px 28px rgba(32, 69, 130, .08); }
-.host-card-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
-.host-card-name { color: var(--csm-ink); font-size: 17px; font-weight: 700; text-decoration: none; overflow-wrap: anywhere; }
-.host-card-name:hover { color: var(--csm-blue); }
-.host-card-template { margin: 12px 0 16px; color: var(--csm-muted); overflow-wrap: anywhere; }
-.host-card-resources { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; margin: 0; border: 1px solid #e6edfa; border-radius: 7px; background: #f8faff; }
-.host-card-resources div { padding: 12px 14px; }
-.host-card-resources div:nth-child(odd) { border-right: 1px solid #e6edfa; }
-.host-card-resources div:nth-child(-n+2) { border-bottom: 1px solid #e6edfa; }
-.host-card-resources div { min-width: 0; }
-.host-card-resources dt { color: var(--csm-muted); font-size: 12px; }
-.host-card-resources dd { margin: 4px 0 0; color: var(--csm-ink); font-family: 'Avenir Next', 'Segoe UI', sans-serif; font-size: 16px; font-weight: 700; overflow-wrap: anywhere; }
-.host-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 16px; }
-.host-card-actions button { min-height: 44px; }
+.host-table table { min-width: 900px; }
+.host-table td { white-space: nowrap; }
+.host-cell-label { display: none; }
 .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 .actions input { max-width: 320px; }
-.empty { padding: 56px 16px; color: var(--csm-muted); text-align: center; }
+.empty { padding: 48px 16px; color: var(--color-text-3, #86909c); text-align: center; }
 .detail { padding: 20px; border: 1px solid var(--color-border-2, #e5e6eb); }
 .detail dl { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; }
 .detail dt { color: var(--color-text-3, #86909c); }
@@ -521,45 +474,38 @@ textarea { min-height: 90px; resize: vertical; }
 .upgrade-form { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
 .upgrade-form label { min-width: 220px; }
 @media (max-width: 720px) {
-  .rail { flex-basis: 180px; }
-  .brand { padding-inline: 14px; }
+  .rail { flex-basis: 156px; }
+  .brand { padding: 0 16px; }
 }
 @media (max-width: 600px) {
   .shell { display: block; }
   .rail { display: none; }
-  .mobile-bar { display: flex; align-items: center; gap: 10px; min-height: 58px; padding: 0 16px; border-bottom: 1px solid var(--csm-border); background: #fbfcff; }
-  .mobile-bar .brand-mark { width: 30px; height: 30px; border-radius: 7px; font-size: 18px; }
-  .mobile-bar strong { color: var(--csm-ink); letter-spacing: .04em; }
-  .mobile-page-title { min-width: 0; margin-left: auto; color: var(--csm-muted); font-size: 13px; white-space: nowrap; }
-  .mobile-menu-trigger { width: 44px; height: 44px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--csm-blue); font-size: 20px; }
-  main { min-height: calc(100vh - 58px); padding: 16px 16px 32px; }
-  .breadcrumb { margin-bottom: 18px; }
-  .page-header { align-items: stretch; flex-direction: column; gap: 14px; margin-bottom: 18px; }
-  .header-actions > * { flex: 1; min-height: 44px; }
+  .mobile-bar { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 16px; border-bottom: 1px solid var(--color-border-2, #e5e6eb); background: var(--color-bg-2, #fff); }
+  .mobile-menu-trigger { width: 36px; height: 36px; padding: 0; border: 0; background: transparent; color: rgb(var(--primary-6, 22, 93, 255)); font-size: 20px; }
+  main { min-height: calc(100vh - 48px); padding: 16px; }
   .panel { padding: 16px; }
   .grid { grid-template-columns: 1fr; }
-  h1 { font-size: 24px; }
+  .page-actions-row > * { min-height: 44px; }
 }
-@media (prefers-reduced-motion: reduce) { .host-card { transition: none; } }
 input[type='range'] { min-height: 0; padding: 0; border: 0; background: transparent; accent-color: rgb(var(--primary-6, 22, 93, 255)); }
 input[type='checkbox'] { width: auto; min-height: 0; padding: 0; accent-color: rgb(var(--primary-6, 22, 93, 255)); }
 .table-wrap table { width: 100%; min-width: 560px; border-collapse: collapse; color: var(--color-text-1, #1d2129); text-align: left; }
 .order-table table, .disk-table table { min-width: 900px; }
-.table-wrap th { padding: 11px 13px; border-bottom: 1px solid var(--csm-border); background: #f7f9fd; color: var(--csm-muted); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.table-wrap th { padding: 10px 12px; border-bottom: 1px solid var(--color-border-2, #e5e6eb); background: var(--color-fill-2, #f2f3f5); color: var(--color-text-2, #4e5969); font-weight: 500; white-space: nowrap; }
 .table-wrap td { padding: 12px; border-bottom: 1px solid var(--color-border-2, #e5e6eb); vertical-align: middle; }
 .table-wrap td small { display: block; margin-top: 4px; color: var(--color-text-3, #86909c); }
 .table-wrap td.actions { display: table-cell; text-align: right; white-space: nowrap; }
 .table-wrap th:last-child { text-align: right; }
-.status { display: inline-block; padding: 4px 9px; border: 1px solid #d7e6ff; border-radius: 99px; background: #eef5ff; color: #185ec8; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.status { display: inline-block; padding: 2px 8px; border-radius: 2px; background: var(--color-primary-light-1, #e8f3ff); color: rgb(var(--primary-6, 22, 93, 255)); font-size: 12px; }
 .inline-form { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; }
 .inline-form label { min-width: 200px; }
 .panel-head strong { color: var(--color-text-1, #1d2129); }
 .detail .actions label { min-width: 220px; }
 .purchase-page { max-width: 1020px; margin-inline: auto; }
 .purchase-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
-.purchase-table { border: 1px solid var(--csm-border); border-radius: 8px; overflow: hidden; }
+.purchase-table { border: 1px solid var(--color-border-2, #e5e6eb); border-radius: 2px; overflow: hidden; }
 .purchase-row { display: grid; grid-template-columns: 120px minmax(0, 1fr) 190px; gap: 18px; align-items: center; min-height: 72px; padding: 12px 18px; border-top: 1px solid var(--color-border-2, #e5e6eb); }
-.purchase-row-head { min-height: 42px; border-top: 0; background: #f7f9fd; color: var(--csm-muted); font-size: 12px; font-weight: 700; }
+.purchase-row-head { min-height: 42px; border-top: 0; background: var(--color-fill-2, #f2f3f5); color: var(--color-text-3, #86909c); font-size: 12px; font-weight: 600; }
 .purchase-label { font-weight: 600; }
 .purchase-control { display: flex; align-items: center; gap: 20px; min-width: 0; }
 .purchase-control input[type='range'] { flex: 1; min-width: 80px; }
@@ -588,5 +534,47 @@ input[type='checkbox'] { width: auto; min-height: 0; padding: 0; accent-color: r
   .purchase-control { gap: 8px; }
   .purchase-number input { width: 64px; }
   .purchase-custom label:first-child { width: 150px; }
+}
+@media (max-width: 600px) {
+  .panel-head { flex-wrap: wrap; }
+  .inline-form { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; width: 100%; align-items: end; }
+  .inline-form label { min-width: 0; }
+  .page-tabs { flex-wrap: wrap; overflow: visible; gap: 4px 16px; }
+  .table-wrap { overflow-x: visible; }
+  .table-wrap table, .table-wrap tbody { display: block; width: 100%; min-width: 0; }
+  .table-wrap thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .table-wrap tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--color-border-2, #e5e6eb); }
+  .table-wrap tbody tr:last-child { border-bottom: 0; }
+  .table-wrap td { display: block; min-width: 0; padding: 0; border: 0; white-space: normal; overflow-wrap: anywhere; }
+  .table-wrap td:first-child { grid-column: 1 / -1; font-weight: 600; }
+  .table-wrap td:last-child { grid-column: 1 / -1; }
+  .table-wrap td.actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 4px; padding-top: 8px; border-top: 1px solid var(--color-border-2, #e5e6eb); text-align: right; white-space: normal; }
+  .table-wrap td.actions .text { min-height: 40px; }
+  .table-wrap td::before { display: block; margin-bottom: 3px; color: var(--color-text-3, #86909c); font-size: 12px; font-weight: 400; }
+  .order-table td:nth-child(2)::before { content: '关联资源'; }
+  .order-table td:nth-child(3)::before { content: '订单类型'; }
+  .order-table td:nth-child(4)::before { content: '资源配置'; }
+  .order-table td:nth-child(5)::before { content: '金额'; }
+  .order-table td:nth-child(6)::before { content: '状态'; }
+  .order-table td:nth-child(7)::before { content: '创建时间'; }
+  .disk-table td:nth-child(2)::before { content: '所属主机'; }
+  .disk-table td:nth-child(3)::before { content: '容量'; }
+  .disk-table td:nth-child(4)::before { content: '到期时间'; }
+  .disk-table td:nth-child(5)::before { content: '状态'; }
+  .combination-list td:nth-child(1)::before { content: 'CPU（核）'; }
+  .combination-list td:nth-child(2)::before { content: '内存（GiB）'; }
+  .combination-list td:nth-child(3)::before { content: '存储（GiB）'; }
+  .combination-list td:nth-child(4)::before { content: '带宽（Mbps）'; }
+  .combination-list td:nth-child(5)::before { content: '新购折扣（%）'; }
+  .combination-list td:nth-child(6)::before { content: '续费折扣（%）'; }
+  .combination-list input { min-width: 0; }
+  .app-config-table td:nth-child(2)::before { content: '执行顺序'; }
+  .execution-table td:nth-child(2)::before { content: '状态'; }
+  .version-page td:nth-child(2)::before { content: '版本号'; }
+  .version-page td:nth-child(3)::before { content: '目标模板'; }
+  .host-table td:first-child { grid-column: 1; grid-row: 1; font-size: 16px; font-weight: 600; }
+  .host-table td:nth-child(7) { grid-column: 2; grid-row: 1; text-align: right; }
+  .host-table td:nth-child(2) { grid-column: 1 / -1; color: var(--color-text-2, #4e5969); }
+  .host-cell-label { display: block; margin-bottom: 3px; color: var(--color-text-3, #86909c); font-size: 12px; font-weight: 400; }
 }
 </style>

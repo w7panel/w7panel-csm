@@ -48,6 +48,6 @@ async function removeVersion(row) {
 </template>
 
 <style scoped>
-.version-form { margin-top: 24px; padding: 20px; border: 1px solid var(--csm-border); border-radius: 8px; background: #f9fbfe; }
+.version-form { margin-top: 24px; padding: 20px; border: 1px solid var(--color-border-2, #e5e6eb); }
 @media (max-width: 600px) { .version-form { padding: 16px; } .version-page .panel-head { gap: 12px; flex-wrap: wrap; } }
 </style>
