@@ -407,7 +407,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', syncHostRoute) })
 :root {
   font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   color: var(--color-text-1, #1d2129);
-  background: var(--color-fill-1, #f7f8fa);
+  background: var(--color-bg-2, #fff);
   font-size: 14px;
 }
 * { box-sizing: border-box; }
@@ -415,12 +415,12 @@ body { margin: 0; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px solid rgb(var(--primary-6, 22, 93, 255)); outline-offset: 2px; }
-.shell { display: flex; min-height: 100vh; background: var(--color-fill-1, #f7f8fa); }
+.shell { display: flex; min-height: 100vh; }
 .rail { flex: 0 0 208px; min-height: 100vh; background: var(--color-bg-2, #fff); border-right: 1px solid var(--color-border-2, #e5e6eb); }
 .brand { display: flex; align-items: center; height: 56px; padding: 0 20px; border-bottom: 1px solid var(--color-border-2, #e5e6eb); color: var(--color-text-1, #1d2129); font-size: 16px; font-weight: 600; }
 .app-menu { padding: 8px; background: transparent; }
 .mobile-bar { display: none; }
-main { flex: 1; min-width: 0; min-height: 100vh; padding: 20px; background: var(--color-fill-1, #f7f8fa); }
+main { flex: 1; min-width: 0; min-height: 100vh; padding: 20px; }
 .page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; margin-bottom: 16px; }
 .page-header .breadcrumb { min-width: 0; overflow-wrap: anywhere; }
 .page-actions-row { display: flex; align-items: center; gap: 8px; margin-left: auto; }
