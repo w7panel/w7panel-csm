@@ -5,6 +5,17 @@
 - 本地测试前阅读 [local-test.md](local-test.md)：`make run` 在本机运行，但使用 `~/.kube/218.config` 连接 218 线上集群。
 - 每次将任务改动合并回主分支（如 `dev-v1`）并解决冲突后，检查合并结果并在主分支提交；`$worktree-merge` 本身仍不自动提交，提交作为合并后的独立步骤执行。
 
+## 发布流程
+
+- 用户要求发布时，在项目根目录、同一个 shell 中执行以下命令，依次构建并推送镜像、部署 Helm：
+
+  ```sh
+  export KO_IMAGE_TAG=1.0.6 && make ko-build && make deployHelm
+  ```
+
+- `KO_IMAGE_TAG` 是动态版本号，须替换为本次发布版本；`1.0.6` 仅为示例，不得固定使用。
+- 构建与部署必须使用同一个 `KO_IMAGE_TAG`；保留 `&&`，构建失败时不得继续部署。
+
 ## 界面与响应式布局
 
 - CSM 界面沿用 w7panel-ckm 与 w7panel-ui 的 Arco 视觉风格：浅色导航、蓝色主操作、面包屑和紧凑的表单及表格。
