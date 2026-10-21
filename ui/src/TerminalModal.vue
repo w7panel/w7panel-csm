@@ -89,13 +89,13 @@ onUnmounted(dispose)
 </template>
 
 <style scoped>
-.terminal-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;color:var(--color-text-2,#4e5969)}
-.terminal-reconnect{min-height:44px;border:0;background:transparent;color:rgb(var(--primary-6,22,93,255));cursor:pointer}
+.terminal-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;color:var(--csm-muted)}
+.terminal-reconnect{min-height:44px;border:0;background:transparent;color:var(--csm-blue);cursor:pointer}
 .terminal-page{min-width:0}
 .terminal-page-heading{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px;margin-bottom:16px}
 .terminal-page-heading h1{min-width:0;overflow-wrap:anywhere}
-.terminal-back{min-height:44px;padding:0;border:0;background:transparent;color:rgb(var(--primary-6,22,93,255));cursor:pointer}
-.terminal-screen{height:min(520px,65vh);min-height:240px;min-width:0;padding:8px;overflow:hidden;background:#1d2129}
+.terminal-back{min-height:44px;padding:0;border:0;background:transparent;color:var(--csm-blue);cursor:pointer}
+.terminal-screen{height:min(520px,65vh);min-height:240px;min-width:0;padding:8px;overflow:hidden;border:1px solid #293850;border-radius:8px;background:#1d2129}
 .terminal-page .terminal-screen{height:calc(100dvh - 200px)}
 .terminal-message{margin:10px 0 0;color:rgb(var(--danger-6,245,63,63))}
 </style>

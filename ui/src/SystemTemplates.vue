@@ -70,10 +70,16 @@ async function save() {
 </template>
 
 <style scoped>
-.template-row{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:18px 0;border-top:1px solid var(--color-border-2,#e5e6eb)}
-.template-row:first-of-type{border-top:0}.template-row strong{margin-right:12px}.template-row p{margin:7px 0;color:var(--color-text-2,#4e5969);overflow-wrap:anywhere}.template-row small{color:var(--color-text-3,#86909c)}
-.template-row button{flex:none}.template-editor fieldset{border:1px solid var(--color-border-2,#e5e6eb);border-radius:2px;padding:14px;margin:0 0 20px}.template-editor legend{color:var(--color-text-2,#4e5969);font-size:13px}
-.template-check{display:inline-flex;flex-direction:row;align-items:center;margin:8px 18px 8px 0}.template-check input{min-width:auto}
-.template-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
-@media(max-width:700px){.template-row{align-items:flex-start}.template-row button{white-space:nowrap}}
+.template-row { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 18px 0; border-top: 1px solid var(--csm-border); }
+.template-row:first-of-type { border-top: 0; }
+.template-row strong { margin-right: 12px; color: var(--csm-ink); font-size: 16px; }
+.template-row p { margin: 7px 0; color: var(--csm-muted); overflow-wrap: anywhere; }
+.template-row small { color: var(--csm-muted); }
+.template-row button { flex: none; }
+.template-editor fieldset { margin: 0 0 20px; padding: 14px; border: 1px solid var(--csm-border); border-radius: 7px; }
+.template-editor legend { color: var(--csm-muted); font-size: 13px; }
+.template-check { display: inline-flex; flex-direction: row; align-items: center; margin: 8px 18px 8px 0; }
+.template-check input { min-width: auto; }
+.template-actions { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+@media (max-width: 700px) { .template-row { align-items: flex-start; flex-direction: column; gap: 10px; } .template-row button { width: 100%; } .template-actions > * { flex: 1; } }
 </style>
