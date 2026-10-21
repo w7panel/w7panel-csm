@@ -311,8 +311,11 @@ onUnmounted(() => { window.removeEventListener('hashchange', syncHostRoute) })
       </a-menu>
     </a-drawer>
     <main>
-      <a-breadcrumb class="breadcrumb"><a-breadcrumb-item>资源管理</a-breadcrumb-item><a-breadcrumb-item>{{ title }}</a-breadcrumb-item><a-breadcrumb-item v-if="hostRouteName">{{ hostRouteName }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb>
-      <div v-if="!hostRouteName && loggedIn" class="page-actions-row"><a-button v-if="section === 'hosts'" type="primary" @click="go('purchase')">＋ 购买资源</a-button><a-button class="refresh-action" @click="load">刷新</a-button></div>
+      <header class="page-header">
+        <a-breadcrumb v-if="hostRouteName" class="breadcrumb"><a-breadcrumb-item><a href="#hosts" @click.prevent="go('hosts')">主机</a></a-breadcrumb-item><a-breadcrumb-item>{{ hostRouteName }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb>
+        <h1 v-else>{{ title }}</h1>
+        <div v-if="!hostRouteName && loggedIn" class="page-actions-row"><a-button v-if="section === 'hosts'" type="primary" @click="go('purchase')">＋ 购买资源</a-button><a-button @click="load">刷新</a-button></div>
+      </header>
       <p v-if="error" class="alert" role="alert">{{ error }}</p><p v-if="notice" class="notice" role="status">{{ notice }} <a v-if="payment?.ticket" :href="`https://ip.w7.cc/pay/${encodeURIComponent(payment.ticket)}?header=false&footer=false`" target="_blank" rel="noopener noreferrer">前往 W7 云支付 ↗</a></p>
       <section v-if="!loggedIn" class="panel"><h2>登录 CSM</h2><p class="hint">使用 W7Panel 账户授权后管理云主机。</p><button class="primary" @click="login">登录</button></section>
       <template v-else><section v-if="section === 'purchase'" class="panel purchase-page">
@@ -372,7 +375,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', syncHostRoute) })
       </a-drawer>
       <UpgradeVersions v-if="section === 'versions'" :rows="rows" :loading="loading" @saved="load" />
       <section v-if="section === 'orders'" class="panel">
-        <div class="panel-head"><strong>全部订单 {{ rows.length }}</strong><form class="inline-form" @submit.prevent="appliedOrderSearch = orderSearch.trim()"><label>订单号<input v-model="orderSearch" placeholder="请输入订单号" /></label><button class="light">查询</button><button type="button" class="light" @click="orderSearch = ''; appliedOrderSearch = ''">重置</button></form></div>
+        <div class="panel-head order-panel-head"><span>{{ loading ? '正在加载…' : `${rows.length} 条订单` }}</span><form class="inline-form" @submit.prevent="appliedOrderSearch = orderSearch.trim()"><label>订单号<input v-model="orderSearch" placeholder="请输入订单号" /></label><button class="light">查询</button><button type="button" class="light" @click="orderSearch = ''; appliedOrderSearch = ''">重置</button></form></div>
         <div v-if="!loading && !filteredOrders.length" class="empty">暂无订单</div>
         <div v-else class="table-wrap order-table"><table><thead><tr><th>订单号</th><th>关联资源</th><th>订单类型</th><th>资源配置</th><th>金额</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead><tbody><tr v-for="row in filteredOrders" :key="row.orderSn"><td class="mono">{{ row.orderSn }}</td><td><button class="text" @click="go(row.kind === 'dataDisk' ? 'disks' : 'hosts')">{{ row.name }}</button><small>{{ row.kind === 'dataDisk' ? '数据盘' : '云主机' }}</small></td><td>{{ ({ buy: '购买', renew: '续费', expand: '扩容' })[row.action] || row.action }}</td><td>{{ row.action === 'renew' ? `${row.quantity} ${periodUnits[row.unit] || row.unit}` : row.kind === 'dataDisk' ? `${row.storageGi} GiB` : `${row.cpu}核 / ${row.memoryGi} GiB / ${row.storageGi} GiB / ${row.bandwidthMbps} Mbps` }}</td><td>¥{{ (row.amountCents / 100).toFixed(2) }}</td><td><span class="status">{{ orderStatus(row) }}</span></td><td>{{ dateText(row.createdAt) }}</td><td class="actions"><a v-if="row.status === 'pending' && row.ticket" class="text" :href="`https://ip.w7.cc/pay/${encodeURIComponent(row.ticket)}?header=false&footer=false`" target="_blank" rel="noopener noreferrer">支付 ↗</a><button v-if="row.status === 'pending'" class="text" @click="refreshOrder(row)">刷新状态</button><span v-else>—</span></td></tr></tbody></table></div>
       </section>
@@ -418,9 +421,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .app-menu { padding: 8px; background: transparent; }
 .mobile-bar { display: none; }
 main { flex: 1; min-width: 0; min-height: 100vh; padding: 20px; background: var(--color-fill-1, #f7f8fa); }
-.breadcrumb { margin-bottom: 20px; }
-.page-actions-row { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
-.refresh-action { margin-left: auto; }
+.page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; margin-bottom: 16px; }
+.page-header .breadcrumb { min-width: 0; overflow-wrap: anywhere; }
+.page-actions-row { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 h1 { margin: 0; color: var(--color-text-1, #1d2129); font-size: 20px; font-weight: 600; line-height: 32px; }
 h2 { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
 .panel { min-width: 0; margin-bottom: 20px; padding: 20px; background: var(--color-bg-2, #fff); }
@@ -486,6 +489,8 @@ textarea { min-height: 90px; resize: vertical; }
   .panel { padding: 16px; }
   .grid { grid-template-columns: 1fr; }
   .page-actions-row > * { min-height: 44px; }
+  .page-header { flex-wrap: wrap; }
+  .order-panel-head { row-gap: 12px; }
 }
 input[type='range'] { min-height: 0; padding: 0; border: 0; background: transparent; accent-color: rgb(var(--primary-6, 22, 93, 255)); }
 input[type='checkbox'] { width: auto; min-height: 0; padding: 0; accent-color: rgb(var(--primary-6, 22, 93, 255)); }
