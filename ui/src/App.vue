@@ -76,6 +76,15 @@ const orderSearch = ref('')
 const appliedOrderSearch = ref('')
 const filteredOrders = computed(() => rows.value.filter(row => row.orderSn?.includes(appliedOrderSearch.value)))
 const mountHosts = ref([])
+const diskRows = computed(() => [
+  ...mountHosts.value.filter(host => host.status?.systemPVCName || Number(host.spec?.systemDiskGi) > 0).map(host => ({
+    systemHost: host,
+    metadata: host.metadata,
+    spec: { csmName: host.metadata?.name, attached: true, storageGi: host.spec?.systemDiskGi, expireTime: host.spec?.expireTime },
+    status: { pvcName: host.status?.systemPVCName },
+  })),
+  ...rows.value,
+])
 const draft = ref({ name: '', shell: '', order: 0 })
 const appDrawerOpen = ref(false)
 const appSaving = ref(false)
@@ -380,9 +389,9 @@ onUnmounted(() => { window.removeEventListener('hashchange', syncHostRoute) })
         <div v-else class="table-wrap order-table"><table><thead><tr><th>订单号</th><th>关联资源</th><th>订单类型</th><th>资源配置</th><th>金额</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead><tbody><tr v-for="row in filteredOrders" :key="row.orderSn"><td class="mono">{{ row.orderSn }}</td><td><button class="text" @click="go(row.kind === 'dataDisk' ? 'disks' : 'hosts')">{{ row.name }}</button><small>{{ row.kind === 'dataDisk' ? '数据盘' : '云主机' }}</small></td><td>{{ ({ buy: '购买', renew: '续费', expand: '扩容' })[row.action] || row.action }}</td><td>{{ row.action === 'renew' ? `${row.quantity} ${periodUnits[row.unit] || row.unit}` : row.kind === 'dataDisk' ? `${row.storageGi} GiB` : `${row.cpu}核 / ${row.memoryGi} GiB / ${row.storageGi} GiB / ${row.bandwidthMbps} Mbps` }}</td><td>¥{{ (row.amountCents / 100).toFixed(2) }}</td><td><span class="status">{{ orderStatus(row) }}</span></td><td>{{ dateText(row.createdAt) }}</td><td class="actions"><a v-if="row.status === 'pending' && row.ticket" class="text" :href="`https://ip.w7.cc/pay/${encodeURIComponent(row.ticket)}?header=false&footer=false`" target="_blank" rel="noopener noreferrer">支付 ↗</a><button v-if="row.status === 'pending'" class="text" @click="refreshOrder(row)">刷新状态</button><span v-else>—</span></td></tr></tbody></table></div>
       </section>
       <section v-else-if="section === 'disks'" class="panel">
-        <div class="panel-head"><button class="primary" @click="orderForDisk('buy')">＋ 购买数据盘</button><span>{{ loading ? '正在加载…' : `${rows.length} 块数据盘` }}</span></div>
-        <div v-if="!loading && !rows.length" class="empty">暂无数据盘</div>
-        <div v-else class="table-wrap disk-table"><table><thead><tr><th>名称 / PVC</th><th>所属主机</th><th>容量</th><th>到期时间</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td><strong>{{ nameOf(row) }}</strong><small>{{ row.status?.pvcName || 'PVC 待创建' }}</small></td><td>{{ row.spec?.attached ? row.spec?.csmName : '未挂载' }}</td><td>{{ row.spec?.storageGi || 0 }} GiB</td><td>{{ dateText(row.spec?.expireTime) }}</td><td><span class="status">{{ diskStatus(row) }}</span></td><td class="actions"><button class="text" @click="detail('data-disks', row)">详情</button><button v-if="row.spec?.paid && !row.spec?.attached && row.status?.phase === 'Available'" class="text" @click="detail('data-disks', row)">挂载</button><button v-if="row.spec?.attached" class="text" @click="detail('data-disks', row)">卸载</button><button v-if="row.spec?.paid" class="text" @click="orderForDisk('renew', row)">续费</button><button v-if="row.spec?.paid" class="text" @click="orderForDisk('expand', row)">扩容</button><button v-if="!row.spec?.attached" class="text danger" @click="deleteDisk(row)">删除</button></td></tr></tbody></table></div>
+        <div class="panel-head"><button class="primary" @click="orderForDisk('buy')">＋ 购买数据盘</button><span>{{ loading ? '正在加载…' : `${diskRows.length} 块磁盘` }}</span></div>
+        <div v-if="!loading && !diskRows.length" class="empty">暂无磁盘</div>
+        <div v-else class="table-wrap disk-table"><table><thead><tr><th>PVC / 类型</th><th>所属主机</th><th>容量</th><th>到期时间</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in diskRows" :key="`${row.systemHost ? 'system' : 'data'}:${row.metadata?.namespace || ''}:${nameOf(row)}`"><td><strong>{{ row.status?.pvcName || 'PVC 待创建' }}</strong><small>{{ row.systemHost ? '系统盘' : '数据盘' }} · {{ nameOf(row) }}</small></td><td>{{ row.spec?.attached ? row.spec?.csmName : '未挂载' }}</td><td>{{ row.spec?.storageGi || 0 }} GiB</td><td>{{ dateText(row.spec?.expireTime) }}</td><td><span class="status">{{ row.systemHost ? phaseOf(row.systemHost) : diskStatus(row) }}</span></td><td class="actions"><button v-if="row.systemHost" class="text" @click="openHost(row.systemHost)">主机详情</button><template v-else><button class="text" @click="detail('data-disks', row)">详情</button><button v-if="row.spec?.paid && !row.spec?.attached && row.status?.phase === 'Available'" class="text" @click="detail('data-disks', row)">挂载</button><button v-if="row.spec?.attached" class="text" @click="detail('data-disks', row)">卸载</button><button v-if="row.spec?.paid" class="text" @click="orderForDisk('renew', row)">续费</button><button v-if="row.spec?.paid" class="text" @click="orderForDisk('expand', row)">扩容</button><button v-if="!row.spec?.attached" class="text danger" @click="deleteDisk(row)">删除</button></template></td></tr></tbody></table></div>
       </section>
       <section v-else-if="section === 'hosts' && !hostRouteName" class="panel">
         <div class="panel-head"><span>{{ loading ? '正在加载…' : `${rows.length} 台主机` }}</span></div>
