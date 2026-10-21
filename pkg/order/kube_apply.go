@@ -125,7 +125,9 @@ func applySpec(spec map[string]any, r Record) error {
 				base = parsed
 			}
 		}
-		if r.Unit == "month" {
+		if r.Unit == "day" {
+			base = base.Add(time.Duration(r.Quantity) * 24 * time.Hour)
+		} else if r.Unit == "month" {
 			base = base.AddDate(0, int(r.Quantity), 0)
 		} else {
 			base = base.AddDate(int(r.Quantity), 0, 0)

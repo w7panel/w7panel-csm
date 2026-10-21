@@ -120,6 +120,12 @@ func TestApplySpecExpansionAndRenewal(t *testing.T) {
 	if spec["expireTime"] != "2030-02-01T00:00:00Z" || spec["memory"] != "4Gi" {
 		t.Fatal(spec)
 	}
+	if err := applySpec(spec, Record{Request: Request{Kind: "csm", Action: "renew", Quantity: 3, Unit: "day"}}); err != nil {
+		t.Fatal(err)
+	}
+	if spec["expireTime"] != "2030-02-04T00:00:00Z" {
+		t.Fatal(spec)
+	}
 }
 func TestW7GatewayChecksRequestAndResponse(t *testing.T) {
 	calls := 0
@@ -172,6 +178,7 @@ func TestW7RenewAndExpandCloudTerms(t *testing.T) {
 		terms                    CloudTerms
 	}{
 		{"renew", "renew", "renew", "720", Request{Kind: "csm", Action: "renew", Namespace: "csm-a", Name: "host-a", Quantity: 1, Unit: "month"}, CloudTerms{Hour: 72000, CPU: 2, Memory: 4, Storage: 40, Bandwidth: 5}},
+		{"renew-days", "renew", "renew", "72", Request{Kind: "csm", Action: "renew", Namespace: "csm-a", Name: "host-a", Quantity: 3, Unit: "day"}, CloudTerms{Hour: 7200, CPU: 2, Memory: 4, Storage: 40, Bandwidth: 5}},
 		{"expand", "expand", "expand", "100", Request{Kind: "csm", Action: "expand", Namespace: "csm-a", Name: "host-a", CPU: 4, MemoryGi: 8, StorageGi: 60, BandwidthMbps: 10}, CloudTerms{Hour: 10000, CPU: 4, Memory: 8, Storage: 60, Bandwidth: 10}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -18,7 +18,7 @@ oidc:
   allowInsecureHTTP: true
   audience: default
   clientID: default
-  redirectURI: https://csm.fan.b2.sz.w7.com/callback
+  redirectURI: http://csm.fan.b2.sz.w7.com/callback
 storage:
   className: ""
 system:

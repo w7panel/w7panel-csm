@@ -40,6 +40,9 @@ const purchasePeriods = [
   { quantity: 1, unit: 'month' }, { quantity: 2, unit: 'month' }, { quantity: 3, unit: 'month' },
   ...Array.from({ length: 10 }, (_, index) => ({ quantity: index + 1, unit: 'year' })),
 ]
+const periodUnits = { day: '天', month: '月', year: '年' }
+const periodLimits = { day: 3650, month: 120, year: 10 }
+const validPeriod = (quantity, unit) => Number.isInteger(quantity) && quantity >= 1 && quantity <= periodLimits[unit]
 const mountTarget = ref('')
 const sshHost = ref('')
 const versions = ref([])
@@ -50,6 +53,13 @@ const pricingFields = [
 ]
 const pricing = ref(Object.fromEntries(pricingFields.map(([field]) => [field, ''])))
 const pricingCombinations = ref([])
+const newPricingPeriod = ref({ quantity: 3, unit: 'day' })
+const activePricingPeriod = ref('')
+const periodKey = item => `${item.unit}:${item.quantity}`
+const pricingPeriods = computed(() => [...new Map(pricingCombinations.value.map(item => [periodKey(item), { key: periodKey(item), quantity: item.quantity, unit: item.unit }])).values()].sort((a, b) => Object.keys(periodUnits).indexOf(a.unit) - Object.keys(periodUnits).indexOf(b.unit) || a.quantity - b.quantity))
+const selectedPricingPeriod = computed(() => pricingPeriods.value.some(item => item.key === activePricingPeriod.value) ? activePricingPeriod.value : pricingPeriods.value[0]?.key || '')
+const selectedPricingPeriodLabel = computed(() => { const period = pricingPeriods.value.find(item => item.key === selectedPricingPeriod.value); return period ? `${period.quantity}${periodUnits[period.unit]}` : '' })
+const currentPeriodRows = computed(() => pricingCombinations.value.map((item, index) => ({ item, index })).filter(row => periodKey(row.item) === selectedPricingPeriod.value))
 const purchaseCombination = computed(() => purchasePrices.value?.combinations?.find(item =>
   form.value.kind === 'csm' && form.value.action === 'buy' &&
   item.quantity === form.value.quantity && item.unit === form.value.unit &&
@@ -108,7 +118,7 @@ function orderRequest() {
 }
 function linePrice(item) {
   if (!purchasePrices.value || form.value.action !== 'buy') return '—'
-  const months = form.value.quantity * (form.value.unit === 'year' ? 12 : 1)
+  const months = form.value.quantity * (form.value.unit === 'day' ? 1 / 30 : form.value.unit === 'year' ? 12 : 1)
   return `¥${((purchasePrices.value[item.price] * Number(form.value[item.field] || 0) * months) / 100).toFixed(2)}`
 }
 function scheduleQuote() {
@@ -128,7 +138,22 @@ function scheduleQuote() {
   }, 350)
 }
 function addCombination() {
-  pricingCombinations.value.push({ quantity: 1, unit: 'month', cpu: 2, memoryGi: 4, storageGi: 40, bandwidthMbps: 5, discountNew: 100, discountRenew: 100 })
+  if (pricingCombinations.value.length >= 100 || !selectedPricingPeriod.value) return
+  const [unit, quantity] = selectedPricingPeriod.value.split(':')
+  let cpu = 2
+  while (pricingCombinations.value.some(item => item.unit === unit && item.quantity === Number(quantity) && item.cpu === cpu && item.memoryGi === 4 && item.storageGi === 40 && item.bandwidthMbps === 5)) cpu++
+  pricingCombinations.value.push({ quantity: Number(quantity), unit, cpu, memoryGi: 4, storageGi: 40, bandwidthMbps: 5, discountNew: 100, discountRenew: 100 })
+}
+function addPricingPeriod() {
+  const { quantity, unit } = newPricingPeriod.value
+  if (!validPeriod(quantity, unit)) { error.value = '周期须为正整数：最多 3650 天、120 月或 10 年。'; return }
+  const key = periodKey(newPricingPeriod.value)
+  if (!pricingPeriods.value.some(item => item.key === key)) {
+    if (pricingCombinations.value.length >= 100) { error.value = '最多可设置 100 条组合配置。'; return }
+    pricingCombinations.value.push({ quantity, unit, cpu: 2, memoryGi: 4, storageGi: 40, bandwidthMbps: 5, discountNew: 100, discountRenew: 100 })
+  }
+  error.value = ''
+  activePricingPeriod.value = key
 }
 async function savePricing() {
   const prices = {}
@@ -141,8 +166,7 @@ async function savePricing() {
   const combinations = pricingCombinations.value.map(item => ({ ...item }))
   const seen = new Set()
   for (const item of combinations) {
-    const validDuration = item.unit === 'month' ? item.quantity >= 1 && item.quantity <= 120 : item.unit === 'year' && item.quantity >= 1 && item.quantity <= 10
-    if (!validDuration || !['quantity', 'cpu', 'memoryGi', 'storageGi', 'bandwidthMbps', 'discountNew', 'discountRenew'].every(field => Number.isInteger(item[field])) ||
+    if (!validPeriod(item.quantity, item.unit) || !['cpu', 'memoryGi', 'storageGi', 'bandwidthMbps', 'discountNew', 'discountRenew'].every(field => Number.isInteger(item[field])) ||
       !['cpu', 'memoryGi', 'storageGi', 'bandwidthMbps'].every(field => item[field] >= 1 && item[field] <= 1000000) ||
       item.discountNew < 1 || item.discountNew > 100 || item.discountRenew < 1 || item.discountRenew > 100) {
       error.value = '组合规格和时长须为正整数，折扣须为 1–100%。'; return
@@ -299,9 +323,9 @@ onUnmounted(() => { window.removeEventListener('hashchange', syncHostRoute) })
         <div v-if="form.action !== 'expand'" class="purchase-duration">
           <strong>购买时长</strong>
           <div class="purchase-periods">
-            <button v-for="period in purchasePeriods" :key="`${period.quantity}-${period.unit}`" type="button" class="light" :class="{ chosen: form.quantity === period.quantity && form.unit === period.unit }" @click="form.quantity = period.quantity; form.unit = period.unit">{{ period.quantity }}{{ period.unit === 'year' ? '年' : '月' }}</button>
+            <button v-for="period in purchasePeriods" :key="`${period.quantity}-${period.unit}`" type="button" class="light" :class="{ chosen: form.quantity === period.quantity && form.unit === period.unit }" @click="form.quantity = period.quantity; form.unit = period.unit">{{ period.quantity }}{{ periodUnits[period.unit] }}</button>
           </div>
-          <div class="purchase-custom"><label>自定义时长<input v-model.number="form.quantity" type="number" min="1" :max="form.unit === 'year' ? 10 : 120" /></label><label>单位<select v-model="form.unit"><option value="month">月</option><option value="year">年</option></select></label></div>
+          <div class="purchase-custom"><label>自定义时长<input v-model.number="form.quantity" type="number" min="1" :max="periodLimits[form.unit]" /></label><label>单位<select v-model="form.unit"><option value="day">天</option><option value="month">月</option><option value="year">年</option></select></label></div>
         </div>
         <div class="purchase-total"><span>总价</span><strong v-if="quoteAmountCents !== null">¥{{ (quoteAmountCents / 100).toFixed(2) }}</strong><span v-else>—</span></div>
         <p v-if="quoteAmountCents !== null && purchaseCombination && purchaseCombination.discountNew < 100" class="hint" role="status">已计入组合优惠：{{ purchaseCombination.discountNew }}%（{{ purchaseCombination.discountNew / 10 }} 折）</p>
@@ -312,21 +336,13 @@ onUnmounted(() => { window.removeEventListener('hashchange', syncHostRoute) })
         <p class="hint">设置各项资源的月单价；购买页按实际资源和时长向服务端获取报价。只有创始人可保存。</p>
         <div class="grid"><label v-for="[field, label, unit] in pricingFields" :key="field">{{ label }}（元 / {{ unit }} / 月）<input v-model.trim="pricing[field]" type="number" min="0" step="0.01" required placeholder="0.00" /></label></div>
         <div class="pricing-combinations">
-          <div class="panel-head"><strong>组合折扣</strong><button type="button" class="light" :disabled="pricingCombinations.length >= 100" @click="addCombination">＋ 添加组合</button></div>
+          <div class="panel-head"><strong>组合折扣</strong></div>
           <p class="hint">时长和 CPU、内存、存储、带宽全部匹配时生效；新购与续费分别设置，扩容仍按单价计算。100% 表示原价。</p>
-          <div v-for="(item, index) in pricingCombinations" :key="index" class="combination-card">
-            <div class="panel-head"><strong>组合 {{ index + 1 }}</strong><button type="button" class="text danger" @click="pricingCombinations.splice(index, 1)">删除</button></div>
-            <div class="grid">
-              <label>时长<input v-model.number="item.quantity" type="number" min="1" :max="item.unit === 'year' ? 10 : 120" step="1" /></label>
-              <label>单位<select v-model="item.unit"><option value="month">月</option><option value="year">年</option></select></label>
-              <label>CPU（核）<input v-model.number="item.cpu" type="number" min="1" step="1" /></label>
-              <label>内存（GiB）<input v-model.number="item.memoryGi" type="number" min="1" step="1" /></label>
-              <label>存储（GiB）<input v-model.number="item.storageGi" type="number" min="1" step="1" /></label>
-              <label>带宽（Mbps）<input v-model.number="item.bandwidthMbps" type="number" min="1" step="1" /></label>
-              <label>新购折扣（%）<input v-model.number="item.discountNew" type="number" min="1" max="100" step="1" /></label>
-              <label>续费折扣（%）<input v-model.number="item.discountRenew" type="number" min="1" max="100" step="1" /></label>
-            </div>
-          </div>
+          <div class="pricing-period-create"><label>添加周期<input v-model.number="newPricingPeriod.quantity" type="number" min="1" :max="periodLimits[newPricingPeriod.unit]" step="1" /></label><label>单位<select v-model="newPricingPeriod.unit"><option value="day">天</option><option value="month">月</option><option value="year">年</option></select></label><button type="button" class="light" @click="addPricingPeriod">＋ 添加周期</button></div>
+          <div v-if="pricingPeriods.length" class="page-tabs" role="tablist" aria-label="组合折扣周期"><button v-for="period in pricingPeriods" :key="period.key" type="button" role="tab" :aria-selected="selectedPricingPeriod === period.key" :class="{ active: selectedPricingPeriod === period.key }" @click="activePricingPeriod = period.key">{{ period.quantity }}{{ periodUnits[period.unit] }}</button></div>
+          <div v-if="selectedPricingPeriod" class="panel-head"><strong>{{ selectedPricingPeriodLabel }}的配置</strong><button type="button" class="light" :disabled="pricingCombinations.length >= 100" @click="addCombination">＋ 添加配置</button></div>
+          <div v-if="selectedPricingPeriod" class="table-wrap combination-list"><table><thead><tr><th>CPU（核）</th><th>内存（GiB）</th><th>存储（GiB）</th><th>带宽（Mbps）</th><th>新购折扣（%）</th><th>续费折扣（%）</th><th>操作</th></tr></thead><tbody><tr v-for="{ item, index } in currentPeriodRows" :key="index"><td><input v-model.number="item.cpu" type="number" min="1" step="1" aria-label="CPU 核数" /></td><td><input v-model.number="item.memoryGi" type="number" min="1" step="1" aria-label="内存 GiB" /></td><td><input v-model.number="item.storageGi" type="number" min="1" step="1" aria-label="存储 GiB" /></td><td><input v-model.number="item.bandwidthMbps" type="number" min="1" step="1" aria-label="带宽 Mbps" /></td><td><input v-model.number="item.discountNew" type="number" min="1" max="100" step="1" aria-label="新购折扣百分比" /></td><td><input v-model.number="item.discountRenew" type="number" min="1" max="100" step="1" aria-label="续费折扣百分比" /></td><td><button type="button" class="text danger" :aria-label="`删除第 ${index + 1} 条配置`" @click="pricingCombinations.splice(index, 1)">删除</button></td></tr></tbody></table></div>
+          <p v-else class="hint">暂无组合折扣。先添加一个周期，再设置该周期的资源配置。</p>
         </div>
         <button class="primary" @click="savePricing">保存费用配置</button>
       </section>
@@ -342,7 +358,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', syncHostRoute) })
       <section v-if="section === 'orders'" class="panel">
         <div class="panel-head"><strong>全部订单 {{ rows.length }}</strong><form class="inline-form" @submit.prevent="appliedOrderSearch = orderSearch.trim()"><label>订单号<input v-model="orderSearch" placeholder="请输入订单号" /></label><button class="light">查询</button><button type="button" class="light" @click="orderSearch = ''; appliedOrderSearch = ''">重置</button></form></div>
         <div v-if="!loading && !filteredOrders.length" class="empty">暂无订单</div>
-        <div v-else class="table-wrap order-table"><table><thead><tr><th>订单号</th><th>关联资源</th><th>订单类型</th><th>资源配置</th><th>金额</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead><tbody><tr v-for="row in filteredOrders" :key="row.orderSn"><td class="mono">{{ row.orderSn }}</td><td><button class="text" @click="go(row.kind === 'dataDisk' ? 'disks' : 'hosts')">{{ row.name }}</button><small>{{ row.kind === 'dataDisk' ? '数据盘' : '云主机' }}</small></td><td>{{ ({ buy: '购买', renew: '续费', expand: '扩容' })[row.action] || row.action }}</td><td>{{ row.action === 'renew' ? `${row.quantity} ${row.unit === 'year' ? '年' : '月'}` : row.kind === 'dataDisk' ? `${row.storageGi} GiB` : `${row.cpu}核 / ${row.memoryGi} GiB / ${row.storageGi} GiB / ${row.bandwidthMbps} Mbps` }}</td><td>¥{{ (row.amountCents / 100).toFixed(2) }}</td><td><span class="status">{{ orderStatus(row) }}</span></td><td>{{ dateText(row.createdAt) }}</td><td class="actions"><a v-if="row.status === 'pending' && row.ticket" class="text" :href="`https://ip.w7.cc/pay/${encodeURIComponent(row.ticket)}?header=false&footer=false`" target="_blank" rel="noopener noreferrer">支付 ↗</a><button v-if="row.status === 'pending'" class="text" @click="refreshOrder(row)">刷新状态</button><span v-else>—</span></td></tr></tbody></table></div>
+        <div v-else class="table-wrap order-table"><table><thead><tr><th>订单号</th><th>关联资源</th><th>订单类型</th><th>资源配置</th><th>金额</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead><tbody><tr v-for="row in filteredOrders" :key="row.orderSn"><td class="mono">{{ row.orderSn }}</td><td><button class="text" @click="go(row.kind === 'dataDisk' ? 'disks' : 'hosts')">{{ row.name }}</button><small>{{ row.kind === 'dataDisk' ? '数据盘' : '云主机' }}</small></td><td>{{ ({ buy: '购买', renew: '续费', expand: '扩容' })[row.action] || row.action }}</td><td>{{ row.action === 'renew' ? `${row.quantity} ${periodUnits[row.unit] || row.unit}` : row.kind === 'dataDisk' ? `${row.storageGi} GiB` : `${row.cpu}核 / ${row.memoryGi} GiB / ${row.storageGi} GiB / ${row.bandwidthMbps} Mbps` }}</td><td>¥{{ (row.amountCents / 100).toFixed(2) }}</td><td><span class="status">{{ orderStatus(row) }}</span></td><td>{{ dateText(row.createdAt) }}</td><td class="actions"><a v-if="row.status === 'pending' && row.ticket" class="text" :href="`https://ip.w7.cc/pay/${encodeURIComponent(row.ticket)}?header=false&footer=false`" target="_blank" rel="noopener noreferrer">支付 ↗</a><button v-if="row.status === 'pending'" class="text" @click="refreshOrder(row)">刷新状态</button><span v-else>—</span></td></tr></tbody></table></div>
       </section>
       <section v-else-if="section === 'disks'" class="panel">
         <div class="panel-head"><button class="primary" @click="orderForDisk('buy')">＋ 购买数据盘</button><span>{{ loading ? '正在加载…' : `${rows.length} 块数据盘` }}</span></div>
@@ -411,9 +427,11 @@ input:hover, select:hover, textarea:hover { background: var(--color-fill-3, #e5e
 input:focus, select:focus, textarea:focus { border-color: rgb(var(--primary-6, 22, 93, 255)); background: var(--color-bg-2, #fff); }
 textarea { min-height: 90px; resize: vertical; }
 .form-panel { padding: 16px 0 8px; }
-.pricing-combinations { max-width: 800px; margin-bottom: 20px; }
-.combination-card { margin-bottom: 12px; padding: 16px; border: 1px solid var(--color-border-2, #e5e6eb); }
-.combination-card .grid { margin-bottom: 0; }
+.pricing-combinations { max-width: 1100px; margin-bottom: 20px; }
+.pricing-period-create { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+.pricing-period-create label { width: 120px; }
+.combination-list table { min-width: 820px; }
+.combination-list input { min-width: 80px; }
 .page-tabs { display: flex; gap: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--color-border-2, #e5e6eb); overflow-x: auto; }
 .page-tabs button { flex: none; padding: 10px 2px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--color-text-2, #4e5969); }
 .page-tabs button.active { border-bottom-color: rgb(var(--primary-6, 22, 93, 255)); color: rgb(var(--primary-6, 22, 93, 255)); font-weight: 600; }

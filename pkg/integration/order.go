@@ -158,7 +158,9 @@ func validateQuoteTerms(choice order.Request, params url.Values, productID strin
 	}
 	if choice.Quantity > 0 {
 		hours := int64(720)
-		if choice.Unit == "year" {
+		if choice.Unit == "day" {
+			hours = 24
+		} else if choice.Unit == "year" {
 			hours = 8640
 		}
 		if params.Get("hour") != strconv.FormatInt(hours*choice.Quantity, 10) {

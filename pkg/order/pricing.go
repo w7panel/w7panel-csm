@@ -157,7 +157,9 @@ func (p KubePricing) Quote(ctx context.Context, r Request) (int64, string, url.V
 		return 0, "", nil, err
 	}
 	hours := int64(720 * r.Quantity)
-	if r.Unit == "year" {
+	if r.Unit == "day" {
+		hours = 24 * r.Quantity
+	} else if r.Unit == "year" {
 		hours = 8640 * r.Quantity
 	}
 	if r.Action == "expand" {

@@ -36,6 +36,7 @@ func TestKubePricingQuoteAndReset(t *testing.T) {
 		{buy, 700},
 		{Request{Kind: "dataDisk", Action: "buy", Namespace: "csm-alice", Name: "disk", StorageGi: 30, Quantity: 1, Unit: "month"}, 300},
 		{Request{Kind: "csm", Action: "buy", Namespace: "csm-alice", Name: "host", TemplateName: "ubuntu-24.04", CPU: 2, MemoryGi: 4, StorageGi: 20, BandwidthMbps: 5, Quantity: 1, Unit: "year"}, 8400},
+		{Request{Kind: "csm", Action: "buy", Namespace: "csm-alice", Name: "host", TemplateName: "ubuntu-24.04", CPU: 2, MemoryGi: 4, StorageGi: 20, BandwidthMbps: 5, Quantity: 3, Unit: "day"}, 70},
 		{Request{Kind: "csm", Action: "renew", Namespace: "csm-alice", Name: "host", Quantity: 1, Unit: "month"}, 700},
 		{Request{Kind: "csm", Action: "expand", Namespace: "csm-alice", Name: "host", CPU: 3, MemoryGi: 4, StorageGi: 20, BandwidthMbps: 5}, 50},
 	} {
@@ -45,7 +46,7 @@ func TestKubePricingQuoteAndReset(t *testing.T) {
 		}
 	}
 	prices := Prices{CPUCents: 100, MemoryGiCents: 50, StorageGiCents: 10, BandwidthMbpsCents: 20,
-		Combinations: []PriceCombination{{Quantity: 1, Unit: "month", CPU: 2, MemoryGi: 4, StorageGi: 20, BandwidthMbps: 5, DiscountNew: 80, DiscountRenew: 90}}}
+		Combinations: []PriceCombination{{Quantity: 1, Unit: "month", CPU: 2, MemoryGi: 4, StorageGi: 20, BandwidthMbps: 5, DiscountNew: 80, DiscountRenew: 90}, {Quantity: 3, Unit: "day", CPU: 2, MemoryGi: 4, StorageGi: 20, BandwidthMbps: 5, DiscountNew: 80, DiscountRenew: 90}}}
 	if err := p.Put(ctx, prices); err != nil {
 		t.Fatal(err)
 	}
@@ -55,6 +56,8 @@ func TestKubePricingQuoteAndReset(t *testing.T) {
 	}{
 		{buy, 560},
 		{Request{Kind: "csm", Action: "renew", Namespace: "csm-alice", Name: "host", Quantity: 1, Unit: "month"}, 630},
+		{Request{Kind: "csm", Action: "buy", Namespace: "csm-alice", Name: "host", TemplateName: "ubuntu-24.04", CPU: 2, MemoryGi: 4, StorageGi: 20, BandwidthMbps: 5, Quantity: 3, Unit: "day"}, 56},
+		{Request{Kind: "csm", Action: "renew", Namespace: "csm-alice", Name: "host", Quantity: 3, Unit: "day"}, 63},
 		{Request{Kind: "csm", Action: "buy", Namespace: "csm-alice", Name: "host", TemplateName: "ubuntu-24.04", CPU: 2, MemoryGi: 4, StorageGi: 21, BandwidthMbps: 5, Quantity: 1, Unit: "month"}, 710},
 		{Request{Kind: "csm", Action: "expand", Namespace: "csm-alice", Name: "host", CPU: 3, MemoryGi: 4, StorageGi: 20, BandwidthMbps: 5}, 50},
 	} {

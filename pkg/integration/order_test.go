@@ -58,6 +58,11 @@ func TestValidateQuoteTermsRejectsOverwrittenSize(t *testing.T) {
 	if err := validateQuoteTerms(choice, params, "42", 1200); err != nil {
 		t.Fatal(err)
 	}
+	choice.Quantity, choice.Unit = 3, "day"
+	params.Set("hour", "72")
+	if err := validateQuoteTerms(choice, params, "42", 1200); err != nil {
+		t.Fatal(err)
+	}
 	params.Set("cpu", "1")
 	if err := validateQuoteTerms(choice, params, "42", 1200); err == nil {
 		t.Fatal("mismatched CPU quote was accepted")

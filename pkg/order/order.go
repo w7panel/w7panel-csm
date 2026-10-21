@@ -180,5 +180,5 @@ func (s Service) Refresh(ctx context.Context, namespace, sn string) (Record, err
 }
 
 func validDuration(quantity int64, unit string) bool {
-	return (unit == "month" && quantity >= 1 && quantity <= 120) || (unit == "year" && quantity >= 1 && quantity <= 10)
+	return (unit == "day" && quantity >= 1 && quantity <= 3650) || (unit == "month" && quantity >= 1 && quantity <= 120) || (unit == "year" && quantity >= 1 && quantity <= 10)
 }

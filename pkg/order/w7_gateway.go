@@ -106,7 +106,9 @@ func (g W7Gateway) Create(ctx context.Context, r Request) (Payment, error) {
 	params.Set("price", strconv.FormatInt(cents/100, 10)+"."+fmt.Sprintf("%02d", cents%100))
 	if r.Quantity > 0 {
 		hours := int64(720)
-		if r.Unit == "year" {
+		if r.Unit == "day" {
+			hours = 24
+		} else if r.Unit == "year" {
 			hours = 8640
 		}
 		params.Set("hour", strconv.FormatInt(hours*r.Quantity, 10))
