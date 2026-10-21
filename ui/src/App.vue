@@ -97,7 +97,7 @@ const title = computed(() => section.value === 'purchase' ? '购买' : tabs.find
 const resource = { hosts: 'csms', templates: 'system-templates', preinstall: 'preinstall-executions', upgrade: 'upgrade-executions', orders: 'orders', disks: 'data-disks', apps: 'preinstall-applications', versions: 'upgrade-versions' }
 
 async function login() { try { await startLogin() } catch (e) { error.value = e.message } }
-function go(id) { if (id === 'apps') { templateTab.value = 'apps'; id = 'templates' } section.value = id; hostRouteName.value = ''; location.hash = id; selected.value = null; terminalOpen.value = false; terminalPage.value = false; mobileMenuOpen.value = false }
+function go(id) { if (id === 'apps') { templateTab.value = 'apps'; id = 'templates' } notice.value = ''; payment.value = null; section.value = id; hostRouteName.value = ''; location.hash = id; selected.value = null; terminalOpen.value = false; terminalPage.value = false; mobileMenuOpen.value = false }
 function orderForDisk(action, disk) {
   form.value = { kind: 'dataDisk', action, name: disk?.metadata?.name || '', templateName: '', cpu: 0, memoryGi: 0, storageGi: action === 'expand' ? Number(disk.spec?.storageGi || 0) + 10 : action === 'buy' ? 10 : 0, bandwidthMbps: 0, quantity: 1, unit: 'month' }
   go('purchase')
@@ -236,6 +236,7 @@ function openHost(row) {
   else location.hash = hash
 }
 function syncHostRoute() {
+  notice.value = ''; payment.value = null
   const name = hostNameFromHash()
   terminalPage.value = /^#hosts\/[^/]+\/terminal$/.test(location.hash)
   if (!terminalPage.value) terminalPageFromDetail = false
