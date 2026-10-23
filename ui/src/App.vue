@@ -72,6 +72,7 @@ const quoteError = ref('')
 const quoteLoading = ref(false)
 let quoteTimer
 let quoteSequence = 0
+let loadSequence = 0
 const orderSearch = ref('')
 const appliedOrderSearch = ref('')
 const filteredOrders = computed(() => rows.value.filter(row => row.orderSn?.includes(appliedOrderSearch.value)))
@@ -206,25 +207,34 @@ async function savePricing() {
 }
 async function load() {
   if (!loggedIn.value) return
+  const sequence = ++loadSequence
   error.value = ''; loading.value = true
   try {
-    rows.value = section.value === 'purchase' || section.value === 'pricing' ? [] : items(await api('/' + (resource[section.value] || 'csms')))
-    if (section.value === 'orders') rows.value.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    if (section.value === 'purchase') {
-      templates.value = items(await api('/system-templates'))
-      purchasePrices.value = await api('/pricing').catch(e => { if (e.status === 404) return null; throw e })
+    const currentSection = section.value
+    const requests = [currentSection === 'purchase' || currentSection === 'pricing' ? Promise.resolve([]) : api('/' + (resource[currentSection] || 'csms'))]
+    if (currentSection === 'purchase') requests.push(api('/system-templates'), api('/pricing').catch(e => { if (e.status === 404) return null; throw e }))
+    if (currentSection === 'pricing') requests.push(api('/pricing').catch(e => { if (e.status === 404) return null; throw e }))
+    if (currentSection === 'hosts') requests.push(api('/upgrade-versions'))
+    if (currentSection === 'templates') requests.push(api('/preinstall-applications'))
+    if (currentSection === 'disks') requests.push(api('/csms'))
+    const [list, extra, prices] = await Promise.all(requests)
+    if (sequence !== loadSequence) return
+    rows.value = items(list)
+    if (currentSection === 'orders') rows.value.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    if (currentSection === 'purchase') {
+      templates.value = items(extra)
+      purchasePrices.value = prices
       scheduleQuote()
     }
-    if (section.value === 'pricing') {
-      const saved = await api('/pricing').catch(e => { if (e.status === 404) return null; throw e })
-      pricing.value = Object.fromEntries(pricingFields.map(([field]) => [field, saved ? (saved[field] / 100).toFixed(2) : '']))
-      pricingCombinations.value = saved?.combinations?.map(item => ({ ...item })) || []
+    if (currentSection === 'pricing') {
+      pricing.value = Object.fromEntries(pricingFields.map(([field]) => [field, extra ? (extra[field] / 100).toFixed(2) : '']))
+      pricingCombinations.value = extra?.combinations?.map(item => ({ ...item })) || []
     }
-    if (section.value === 'hosts') versions.value = items(await api('/upgrade-versions'))
-    if (section.value === 'templates') appRows.value = items(await api('/preinstall-applications'))
-    if (section.value === 'disks') mountHosts.value = items(await api('/csms'))
-  } catch (e) { error.value = e.message; rows.value = []; if (e.status === 401) loggedIn.value = false }
-  finally { loading.value = false }
+    if (currentSection === 'hosts') versions.value = items(extra)
+    if (currentSection === 'templates') appRows.value = items(extra)
+    if (currentSection === 'disks') mountHosts.value = items(extra)
+  } catch (e) { if (sequence === loadSequence) { error.value = e.message; rows.value = []; if (e.status === 401) loggedIn.value = false } }
+  finally { if (sequence === loadSequence) loading.value = false }
 }
 async function detail(kind, row) {
   const name = row.metadata?.name || row.name
@@ -261,8 +271,7 @@ async function run(path, body) {
     notice.value = result?.status === 'paid' ? `订单 ${result.orderSn} 已支付，资源正在生效。` : result?.orderSn ? `订单 ${result.orderSn} 已创建，支付确认后生效。` : '操作已提交。'
     if (result?.ticket) payment.value = result
     if (section.value === 'disks') selected.value = null
-    await load()
-    if (hostRouteName.value) await loadHost(hostRouteName.value)
+    await Promise.all([load(), hostRouteName.value ? loadHost(hostRouteName.value) : null])
     return result
   } catch (e) { error.value = e.message }
 }
@@ -301,7 +310,7 @@ watch(() => form.value.kind, kind => {
     if (!form.value.bandwidthMbps) form.value.bandwidthMbps = 5
   }
 })
-onMounted(async () => { window.addEventListener('hashchange', syncHostRoute); try { if (await finishLogin()) loggedIn.value = true; sshHost.value = (await api('/auth/config')).sshHost || ''; if (loggedIn.value) { await load(); if (hostRouteName.value) await loadHost(hostRouteName.value) } } catch (e) { error.value = e.message } })
+onMounted(async () => { window.addEventListener('hashchange', syncHostRoute); try { if (await finishLogin()) loggedIn.value = true; const [config] = await Promise.all([api('/auth/config'), loggedIn.value ? load() : null, loggedIn.value && hostRouteName.value ? loadHost(hostRouteName.value) : null]); sshHost.value = config.sshHost || '' } catch (e) { error.value = e.message } })
 onUnmounted(() => { window.removeEventListener('hashchange', syncHostRoute) })
 </script>
 
