@@ -114,6 +114,14 @@ func (r *CsmReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	if image == "" {
 		return r.hostStatus(ctx, host, "Failed", "template image is empty", 0)
 	}
+	var initialization *api.PreinstallExecution
+	if template.Spec.InitMode == "cloudInit" {
+		host.Status.InitMode = "cloudInit"
+		initialization, err = r.ensureCloudInit(ctx, host, template)
+		if err != nil {
+			return r.hostStatus(ctx, host, "Failed", err.Error(), 0)
+		}
+	}
 	claim := host.Status.SystemPVCName
 	if claim == "" {
 		claim = storage.ClaimName("system-", host.Name)
@@ -169,6 +177,9 @@ func (r *CsmReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	if r.JumpPort != 0 {
 		hostruntime.ConfigureSSHGateway(dep, host)
 	}
+	if initialization != nil {
+		hostruntime.ConfigureCloudInit(dep, host)
+	}
 	if err := r.ensureDeployment(ctx, host, dep); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -186,7 +197,6 @@ func (r *CsmReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}
 	phase := "Provisioning"
 	if actual.Status.ReadyReplicas == 1 && actual.Status.ObservedGeneration >= actual.Generation {
-		phase = "Ready"
 		if host.Status.TemplateHash != template.Spec.Hash {
 			host.Status.TemplateHash = template.Spec.Hash
 			if err := r.Status().Update(ctx, host); err != nil {
@@ -194,8 +204,20 @@ func (r *CsmReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 			}
 			return ctrl.Result{Requeue: true}, nil
 		}
+		phase = "Ready"
+		if initialization != nil {
+			if initialization.Status.Phase == "failed" {
+				phase = "Failed"
+			} else if initialization.Status.Phase != "succeeded" {
+				phase = "Provisioning"
+			}
+		}
 	}
-	return r.hostStatus(ctx, host, phase, "", port)
+	message := ""
+	if phase == "Failed" && initialization != nil {
+		message = initialization.Status.Message
+	}
+	return r.hostStatus(ctx, host, phase, message, port)
 }
 
 func (r *CsmReconciler) hostStatus(ctx context.Context, h *api.Csm, phase, msg string, port int32) (ctrl.Result, error) {

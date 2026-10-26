@@ -38,7 +38,25 @@ then run `/sbin/init` as PID 1 under Sysbox; they do not install a Kubernetes
 distribution. The system disk PVC supplies the writable rootfs layer.
 Additional Ubuntu, CentOS, or other Linux versions can be added as
 `SystemTemplate` resources with systemd-ready images. Each image must provide
-`/sbin/init`, `ssh-keygen`, `/usr/sbin/sshd`, and an enabled SSH service.
+`/sbin/init`, `ssh-keygen`, `/usr/sbin/sshd`, and an enabled SSH service. The
+`ubuntu-24.04-cloudinit` template also requires cloud-init with the NoCloud
+datasource; CSM publishes its seed through a per-host Secret before starting
+the Pod. New purchases use this template. The original `ubuntu-24.04` template
+remains available to existing hosts and is excluded from new purchases.
+Build the cloud-init image with `make docker-build-system SYSTEM_IMG=<registry>/w7panel-csm:system-ubuntu-24.04-cloudinit`
+and publish it before setting `system.cloudInitImage` in Helm values. This Helm
+value defaults to empty; CSM creates the cloud-init template only after it is
+configured with the published image.
+Apply the updated CRDs (`make install`) before upgrading the manager; Helm does
+not update resources stored under `crds/` during a release upgrade.
+
+Initialization entries for cloud-init hosts contain `#cloud-config` YAML.
+Selected entries merge by configured order: mappings merge recursively, lists
+append, and later scalar values replace earlier values. cloud-init itself runs
+modules in its own stages. Host status becomes Ready after `cloud-init status`
+reports success; failures and the bounded cloud-init output log appear in the
+initialization task list. Existing Shell preinstall tasks remain supported for
+hosts on the original template.
 The sample manifest is in `config/samples/`.
 The deployed manager requires in-cluster Kubernetes credentials and Helm values for
 `oidc.discoveryURL`, `oidc.audience`, `oidc.clientID`, `oidc.redirectURI`,

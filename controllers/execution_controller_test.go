@@ -23,6 +23,43 @@ type testRunner struct {
 	wait  bool
 }
 
+type cloudInitRunner struct {
+	output string
+	log    string
+}
+
+func (r cloudInitRunner) Run(_ context.Context, _, _, command string) (string, error) {
+	if strings.HasPrefix(command, "cloud-init status") {
+		return r.output, nil
+	}
+	return r.log, nil
+}
+
+func TestCloudInitExecutionWaitsThenRecordsResult(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := csm.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	execution := &csm.PreinstallExecution{ObjectMeta: metav1.ObjectMeta{Name: "preinstall-uid"}, Spec: csm.PreinstallExecutionSpec{CsmNamespace: "users", CsmName: "host", InitMode: "cloudInit"}}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(execution).WithObjects(execution).Build()
+	r := &PreinstallExecutionReconciler{Client: c, Runner: cloudInitRunner{output: `{"status":"running"}`}}
+	result, err := r.reconcileCloudInit(context.Background(), execution)
+	if err != nil || result.RequeueAfter == 0 || execution.Status.Phase != "running" {
+		t.Fatalf("did not wait: %+v %+v %v", result, execution.Status, err)
+	}
+	r.Runner = cloudInitRunner{output: `{"status":"done","extended_status":"done","errors":[]}`, log: "cloud-init output"}
+	result, err = r.reconcileCloudInit(context.Background(), execution)
+	if err != nil || result.RequeueAfter != 0 || execution.Status.Phase != "succeeded" || execution.Status.Log != "cloud-init output" {
+		t.Fatalf("did not complete: %+v %+v %v", result, execution.Status, err)
+	}
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(execution), execution); err != nil {
+		t.Fatal(err)
+	}
+	if execution.Status.Phase != "succeeded" {
+		t.Fatalf("result not saved: %+v", execution.Status)
+	}
+}
+
 func (r *testRunner) Run(_ context.Context, _, _, shell string) (string, error) {
 	r.calls = append(r.calls, shell)
 	if r.wait {

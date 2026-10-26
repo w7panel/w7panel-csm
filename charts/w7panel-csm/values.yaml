@@ -23,6 +23,7 @@ storage:
   className: ""
 system:
   image: "docker.cnb.cool/i0358/w7panel-csm:system-ubuntu-24.04-test-20261019"
+  cloudInitImage: ""
 ssh:
   gatewayNamespace: higress-system
   gatewayName: gateway

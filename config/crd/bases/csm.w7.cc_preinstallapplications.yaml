@@ -44,12 +44,14 @@
                   },
                   "shell": {
                     "type": "string"
+                  },
+                  "cloudConfig": {
+                    "type": "string"
                   }
                 },
                 "required": [
                   "enabled",
-                  "order",
-                  "shell"
+                  "order"
                 ]
               }
             }

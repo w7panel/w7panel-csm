@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/w7panel/w7panel-csm/pkg/preinstall"
+
 	"golang.org/x/crypto/ssh"
 )
 
@@ -149,6 +151,23 @@ func (b KubeBackend) Action(ctx context.Context, kind, namespace, name, action s
 		}
 		if kind == "upgrade-versions" {
 			if _, hasPolicies := input.Spec["policies"]; hasPolicies {
+				return nil, ErrConflict
+			}
+			templateName, _ := input.Spec["templateName"].(string)
+			template, err := b.object(ctx, "system-templates", "", templateName)
+			if err != nil {
+				return nil, err
+			}
+			if template.Spec["initMode"] == "cloudInit" {
+				return nil, ErrConflict
+			}
+		}
+		if kind == "preinstall-applications" {
+			config, ok := input.Spec["cloudConfig"].(string)
+			if !ok || input.Spec["shell"] != nil {
+				return nil, ErrConflict
+			}
+			if _, err := preinstall.CloudConfig(config); err != nil {
 				return nil, ErrConflict
 			}
 		}
@@ -287,6 +306,7 @@ func (b KubeBackend) saveSystemTemplate(ctx context.Context, name, action string
 			Version                string   `json:"version"`
 			Source                 string   `json:"source"`
 			Image                  string   `json:"image"`
+			InitMode               string   `json:"initMode"`
 			PreinstallApplications []string `json:"preinstallApplications"`
 		} `json:"spec"`
 	}
@@ -299,17 +319,36 @@ func (b KubeBackend) saveSystemTemplate(ctx context.Context, name, action string
 	if action == "create" && input.Spec.Source != "manual" {
 		return nil, ErrConflict
 	}
+	if input.Spec.InitMode != "" && input.Spec.InitMode != "cloudInit" {
+		return nil, ErrConflict
+	}
 	seen := map[string]bool{}
 	for _, app := range input.Spec.PreinstallApplications {
 		if !validName(app) || seen[app] {
 			return nil, ErrConflict
 		}
 		seen[app] = true
-		if _, err := b.Get(ctx, "preinstall-applications", "", app); err != nil {
+		config, err := b.object(ctx, "preinstall-applications", "", app)
+		if err != nil {
 			return nil, err
+		}
+		if input.Spec.InitMode == "cloudInit" && config.Spec["cloudConfig"] == nil {
+			return nil, ErrConflict
+		}
+		if input.Spec.InitMode == "cloudInit" && config.Spec["enabled"] == true {
+			cloudConfig, ok := config.Spec["cloudConfig"].(string)
+			if !ok {
+				return nil, ErrConflict
+			}
+			if _, err := preinstall.CloudConfig(cloudConfig); err != nil {
+				return nil, ErrConflict
+			}
 		}
 	}
 	spec := map[string]any{"version": input.Spec.Version, "source": input.Spec.Source, "image": input.Spec.Image}
+	if input.Spec.InitMode != "" {
+		spec["initMode"] = input.Spec.InitMode
+	}
 	if len(input.Spec.PreinstallApplications) > 0 {
 		spec["preinstallApplications"] = input.Spec.PreinstallApplications
 	}
@@ -323,6 +362,9 @@ func (b KubeBackend) saveSystemTemplate(ctx context.Context, name, action string
 			return nil, ErrConflict
 		}
 		if current.Spec["source"] != input.Spec.Source {
+			return nil, ErrConflict
+		}
+		if mode, _ := current.Spec["initMode"].(string); mode != input.Spec.InitMode {
 			return nil, ErrConflict
 		}
 		oldSpec := current.Spec
@@ -486,6 +528,9 @@ func (b KubeBackend) createExecution(ctx context.Context, ns, name, kind string,
 		if err != nil {
 			return nil, err
 		}
+		if template.Spec["initMode"] == "cloudInit" {
+			return nil, ErrConflict
+		}
 		names, _ := template.Spec["preinstallApplications"].([]any)
 		if source == "" || sourceHash == "" || sourceHash != template.Spec["hash"] {
 			return nil, ErrConflict
@@ -525,6 +570,9 @@ func (b KubeBackend) createExecution(ctx context.Context, ns, name, kind string,
 		target, err := b.object(ctx, "system-templates", "", targetName)
 		if err != nil {
 			return nil, err
+		}
+		if target.Spec["initMode"] == "cloudInit" {
+			return nil, ErrConflict
 		}
 		names, _ := version.Spec["policies"].([]any)
 		targetHash, _ := target.Spec["hash"].(string)

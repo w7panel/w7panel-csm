@@ -25,5 +25,16 @@ func EnsureOfficialSystemTemplate(ctx context.Context, c client.Client) error {
 	if err := c.Create(ctx, template); err != nil && !apierrors.IsAlreadyExists(err) {
 		return err
 	}
+	cloudImage := os.Getenv("CSM_CLOUD_INIT_SYSTEM_IMAGE")
+	if cloudImage == "" {
+		return nil
+	}
+	cloudDigest := sha256.Sum256([]byte(cloudImage))
+	cloudTemplate := &csm.SystemTemplate{ObjectMeta: metav1.ObjectMeta{Name: "ubuntu-24.04-cloudinit"}, Spec: csm.SystemTemplateSpec{
+		Version: "24.04", Source: "official", Image: cloudImage, Hash: hex.EncodeToString(cloudDigest[:]), InitMode: "cloudInit",
+	}}
+	if err := c.Create(ctx, cloudTemplate); err != nil && !apierrors.IsAlreadyExists(err) {
+		return err
+	}
 	return nil
 }

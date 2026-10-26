@@ -144,3 +144,86 @@ func TestPaidHostTemplateAndReadyHash(t *testing.T) {
 		t.Fatalf("hash %q", h.Status.TemplateHash)
 	}
 }
+
+func TestCloudInitSeedPrecedesDeploymentAndGatesReady(t *testing.T) {
+	s := runtime.NewScheme()
+	_ = api.AddToScheme(s)
+	_ = corev1.AddToScheme(s)
+	_ = appsv1.AddToScheme(s)
+	s.AddKnownTypeWithName(gatewayGVK, &unstructured.Unstructured{})
+	s.AddKnownTypeWithName(routeGVK, &unstructured.Unstructured{})
+	h := &api.Csm{ObjectMeta: metav1.ObjectMeta{Name: "host", Namespace: "tenant", UID: "uid"}, Spec: api.CsmSpec{Paid: true, TemplateName: "ubuntu-cloud", SystemDiskGi: 10}}
+	tpl := &api.SystemTemplate{ObjectMeta: metav1.ObjectMeta{Name: "ubuntu-cloud"}, Spec: api.SystemTemplateSpec{Image: "ubuntu:cloud", Hash: "hash", InitMode: "cloudInit", PreinstallApplications: []string{"setup"}}}
+	app := &api.PreinstallApplication{ObjectMeta: metav1.ObjectMeta{Name: "setup"}, Spec: api.PreinstallApplicationSpec{Enabled: true, CloudConfig: "#cloud-config\npackages: [curl]\n"}}
+	gw := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "gateway.networking.k8s.io/v1", "kind": "Gateway", "metadata": map[string]any{"name": "shared", "namespace": "network"}, "spec": map[string]any{"listeners": []any{}}}}
+	c := fake.NewClientBuilder().WithScheme(s).WithStatusSubresource(&api.Csm{}, &appsv1.Deployment{}, &api.PreinstallExecution{}).WithObjects(h, tpl, app, gw).Build()
+	r := &CsmReconciler{Client: c, Scheme: s, GatewayNamespace: "network", GatewayName: "shared", PortStart: 30000, PortEnd: 30001}
+	ctx := context.Background()
+	key := types.NamespacedName{Namespace: h.Namespace, Name: h.Name}
+	for i := 0; i < 5; i++ {
+		if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: key}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seed := &corev1.Secret{}
+	if err := c.Get(ctx, types.NamespacedName{Namespace: h.Namespace, Name: "csm-cloudinit-uid"}, seed); err != nil {
+		t.Fatal(err)
+	}
+	if string(seed.Data["user-data"]) == "" || string(seed.Data["meta-data"]) != "instance-id: uid\nlocal-hostname: host\n" {
+		t.Fatalf("invalid seed: %v", seed.Data)
+	}
+	initialUserData := string(seed.Data["user-data"])
+	dep := &appsv1.Deployment{}
+	if err := c.Get(ctx, key, dep); err != nil {
+		t.Fatal(err)
+	}
+	if len(dep.Spec.Template.Spec.Containers[0].VolumeMounts) == 0 {
+		t.Fatal("seed not mounted")
+	}
+	dep.Status.ReadyReplicas = 1
+	dep.Status.ObservedGeneration = dep.Generation
+	if err := c.Status().Update(ctx, dep); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: key}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := c.Get(ctx, key, h); err != nil {
+		t.Fatal(err)
+	}
+	if h.Status.Phase != "Provisioning" || h.Status.TemplateHash != "hash" {
+		t.Fatalf("ready before cloud-init: %+v", h.Status)
+	}
+	execution := &api.PreinstallExecution{}
+	if err := c.Get(ctx, types.NamespacedName{Name: "preinstall-uid"}, execution); err != nil {
+		t.Fatal(err)
+	}
+	execution.Status.Phase = "succeeded"
+	if err := c.Status().Update(ctx, execution); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Get(ctx, key, h); err != nil {
+		t.Fatal(err)
+	}
+	if h.Status.Phase != "Ready" {
+		t.Fatalf("cloud-init completion not reflected: %+v", h.Status)
+	}
+	app.Spec.CloudConfig = "#cloud-config\npackages: [changed]\n"
+	if err := c.Update(ctx, app); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Get(ctx, types.NamespacedName{Namespace: h.Namespace, Name: seed.Name}, seed); err != nil {
+		t.Fatal(err)
+	}
+	if string(seed.Data["user-data"]) != initialUserData {
+		t.Fatal("seed changed after config edit")
+	}
+}

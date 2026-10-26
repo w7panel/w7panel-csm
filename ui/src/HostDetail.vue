@@ -84,8 +84,8 @@ cat ~/.ssh/csm-218.pub</pre>
       </section>
       <section class="host-section" aria-labelledby="host-operation-heading">
         <h2 id="host-operation-heading">主机操作</h2>
-        <p class="host-section-note">预装会提交初始化任务；升级前请选择目标版本并确认。</p>
-        <button class="light" @click="emit('preinstall')">执行预装</button>
+        <p class="host-section-note">{{ host.status?.initMode === 'cloudInit' ? 'cloud-init 在首次启动时自动运行；升级前请选择目标版本并确认。' : '预装会提交初始化任务；升级前请选择目标版本并确认。' }}</p>
+        <button v-if="host.status?.initMode !== 'cloudInit'" class="light" @click="emit('preinstall')">执行预装</button>
         <div class="host-upgrade"><label>升级目标版本<select v-model="upgradeTarget"><option value="">请选择版本</option><option v-for="item in versions" :key="name(item)" :value="name(item)">{{ item.spec?.version || name(item) }}</option></select></label><button class="primary" :disabled="!upgradeTarget" @click="upgrade">确认升级</button></div>
       </section>
     </div>

@@ -19,8 +19,9 @@ async function open(row) {
       version: row.spec.version,
       source: row.spec.source,
       image: row.spec.image,
+      initMode: row.spec.initMode || '',
       preinstallApplications: [...(row.spec.preinstallApplications || [])],
-    } : { name: '', resourceVersion: '', version: '', source: 'manual', image: '', preinstallApplications: [] }
+    } : { name: '', resourceVersion: '', version: '', source: 'manual', image: '', initMode: 'cloudInit', preinstallApplications: [] }
   } catch (e) { error.value = e.message }
 }
 
@@ -44,10 +45,10 @@ async function save() {
 <template>
   <section class="panel template-page">
     <div class="panel-head"><button class="primary" @click="open()">＋ 新建系统模板</button><span>{{ loading ? '正在加载…' : `${rows.length} 个模板` }}</span></div>
-    <p class="hint">修改镜像会自动更新使用该模板的云主机；预装应用配置用于后续首次执行。</p>
+    <p class="hint">新模板使用 cloud-init 首次启动配置。修改镜像会自动更新使用该模板的云主机。</p>
     <div v-if="!loading && !rows.length" class="empty">暂无系统模板</div>
     <div v-for="row in rows" :key="row.metadata.name" class="template-row">
-      <div><strong>{{ row.metadata.name }}</strong><span class="status">{{ row.spec.source === 'official' ? '官方' : '手动' }}</span><p>{{ row.spec.version }} · {{ row.spec.image }}</p><small>{{ row.spec.preinstallApplications?.length || 0 }} 项预装应用</small></div>
+      <div><strong>{{ row.metadata.name }}</strong><span class="status">{{ row.spec.source === 'official' ? '官方' : '手动' }}</span><p>{{ row.spec.version }} · {{ row.spec.image }}</p><small>{{ row.spec.initMode === 'cloudInit' ? 'cloud-init' : '旧版' }} · {{ row.spec.preinstallApplications?.length || 0 }} 项初始化配置</small></div>
       <button class="light" @click="open(row)">编辑配置</button>
     </div>
   </section>
@@ -62,7 +63,7 @@ async function save() {
         <label>来源<select v-model="editor.source" :disabled="!!editor.resourceVersion"><option v-if="editor.resourceVersion" value="official">官方</option><option value="manual">手动</option></select></label>
         <label>系统镜像<input v-model.trim="editor.image" required placeholder="registry.example.com/csm-system:latest" /></label>
       </div>
-      <fieldset><legend>预装应用</legend><p v-if="!applications.length" class="hint">暂无初始化配置，可从“初始化配置”页新增。</p><label v-for="app in applications" :key="app.metadata.name" class="template-check"><input v-model="editor.preinstallApplications" type="checkbox" :value="app.metadata.name" />{{ app.metadata.name }}</label></fieldset>
+      <fieldset><legend>初始化配置</legend><p v-if="!applications.some(app => editor.initMode === 'cloudInit' ? (app.spec.cloudConfig || app.spec.hasCloudConfig) : (app.spec.shell || app.spec.hasShell))" class="hint">暂无可选配置，可从“初始化配置”页新增。</p><label v-for="app in applications.filter(app => editor.initMode === 'cloudInit' ? (app.spec.cloudConfig || app.spec.hasCloudConfig) : (app.spec.shell || app.spec.hasShell))" :key="app.metadata.name" class="template-check"><input v-model="editor.preinstallApplications" type="checkbox" :value="app.metadata.name" />{{ app.metadata.name }}</label></fieldset>
       <div class="template-actions"><button type="button" class="light" @click="emit('navigate', 'apps')">管理初始化配置</button><button type="button" class="light" @click="editor = null">取消</button><button class="primary" :disabled="saving">{{ saving ? '保存中…' : '保存修改' }}</button></div>
     </form>
   </section>

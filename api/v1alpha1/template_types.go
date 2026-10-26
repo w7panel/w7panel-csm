@@ -15,6 +15,7 @@ type SystemTemplateSpec struct {
 	Version                string   `json:"version"`
 	Source                 string   `json:"source"`
 	Image                  string   `json:"image"`
+	InitMode               string   `json:"initMode,omitempty"`
 	Hash                   string   `json:"hash"`
 	PreinstallApplications []string `json:"preinstallApplications,omitempty"`
 }
@@ -31,9 +32,10 @@ type SystemTemplateList struct {
 }
 
 type PreinstallApplicationSpec struct {
-	Enabled bool   `json:"enabled"`
-	Order   int32  `json:"order"`
-	Shell   string `json:"shell"`
+	Enabled     bool   `json:"enabled"`
+	Order       int32  `json:"order"`
+	Shell       string `json:"shell"`
+	CloudConfig string `json:"cloudConfig,omitempty"`
 }
 type PreinstallApplication struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -66,6 +68,7 @@ type PreinstallExecutionSpec struct {
 	CsmName      string      `json:"csmName"`
 	TemplateName string      `json:"templateName"`
 	TemplateHash string      `json:"templateHash"`
+	InitMode     string      `json:"initMode,omitempty"`
 	Steps        []ShellStep `json:"steps,omitempty"`
 }
 type PreinstallExecution struct {

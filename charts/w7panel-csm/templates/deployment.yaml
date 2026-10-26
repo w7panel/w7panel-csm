@@ -42,6 +42,8 @@ spec:
               value: {{ .Values.storage.className | quote }}
             - name: CSM_SYSTEM_IMAGE
               value: {{ .Values.system.image | quote }}
+            - name: CSM_CLOUD_INIT_SYSTEM_IMAGE
+              value: {{ .Values.system.cloudInitImage | quote }}
             - name: CSM_SSH_GATEWAY_NAMESPACE
               value: {{ .Values.ssh.gatewayNamespace | quote }}
             - name: CSM_SSH_GATEWAY_NAME

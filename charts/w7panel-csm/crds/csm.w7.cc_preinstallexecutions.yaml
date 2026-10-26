@@ -47,6 +47,10 @@
                   "templateHash": {
                     "type": "string"
                   },
+                  "initMode": {
+                    "type": "string",
+                    "enum": ["cloudInit"]
+                  },
                   "steps": {
                     "type": "array",
                     "items": {

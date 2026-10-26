@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -52,6 +53,9 @@ func (r *PreinstallExecutionReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, failPreinstall(ctx, r.Client, execution, "host template changed")
 	}
 	status := &execution.Status
+	if execution.Spec.InitMode == "cloudInit" {
+		return r.reconcileCloudInit(ctx, execution)
+	}
 	if err := runSteps(ctx, r.Runner, execution.Spec.CsmNamespace, execution.Spec.CsmName, execution.Spec.Steps, status, func() error { return r.Status().Update(ctx, execution) }); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -62,6 +66,50 @@ func (r *PreinstallExecutionReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, r.Status().Update(ctx, execution)
 	}
 	return ctrl.Result{}, nil
+}
+
+func (r *PreinstallExecutionReconciler) reconcileCloudInit(ctx context.Context, execution *csm.PreinstallExecution) (ctrl.Result, error) {
+	if execution.Status.StartedAt == nil {
+		now := metav1.Now()
+		execution.Status.StartedAt = &now
+		execution.Status.Phase = "running"
+		if err := r.Status().Update(ctx, execution); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+	output, runErr := r.Runner.Run(ctx, execution.Spec.CsmNamespace, execution.Spec.CsmName, "cloud-init status --format=json 2>/dev/null || true")
+	if errors.Is(runErr, execshell.ErrPodUnavailable) {
+		return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
+	}
+	var state struct {
+		Status         string   `json:"status"`
+		ExtendedStatus string   `json:"extended_status"`
+		Errors         []string `json:"errors"`
+	}
+	if err := json.Unmarshal([]byte(output), &state); err != nil || state.Status == "" {
+		if runErr != nil {
+			return ctrl.Result{}, failPreinstall(ctx, r.Client, execution, "cloud-init status: "+runErr.Error())
+		}
+		return ctrl.Result{}, failPreinstall(ctx, r.Client, execution, "invalid cloud-init status")
+	}
+	if state.Status == "running" || state.Status == "not started" || state.Status == "not run" {
+		return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
+	}
+	log, logErr := r.Runner.Run(ctx, execution.Spec.CsmNamespace, execution.Spec.CsmName, "tail -c 65536 /var/log/cloud-init-output.log")
+	if logErr == nil {
+		execution.Status.Log = log
+	}
+	if state.Status != "done" || (state.ExtendedStatus != "" && state.ExtendedStatus != "done") || len(state.Errors) > 0 || runErr != nil {
+		message := "cloud-init " + state.Status
+		if len(state.Errors) > 0 {
+			message += ": " + strings.Join(state.Errors, "; ")
+		}
+		return ctrl.Result{}, failPreinstall(ctx, r.Client, execution, message)
+	}
+	execution.Status.Phase = "succeeded"
+	now := metav1.Now()
+	execution.Status.CompletedAt = &now
+	return ctrl.Result{}, r.Status().Update(ctx, execution)
 }
 
 func failPreinstall(ctx context.Context, c client.Client, execution *csm.PreinstallExecution, message string) error {

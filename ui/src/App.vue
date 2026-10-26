@@ -86,7 +86,7 @@ const diskRows = computed(() => [
   })),
   ...rows.value,
 ])
-const draft = ref({ name: '', shell: '', order: 0 })
+const draft = ref({ name: '', cloudConfig: '#cloud-config\npackages:\n  - curl\n', order: 0 })
 const appDrawerOpen = ref(false)
 const appSaving = ref(false)
 const appError = ref('')
@@ -222,7 +222,7 @@ async function load() {
     rows.value = items(list)
     if (currentSection === 'orders') rows.value.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     if (currentSection === 'purchase') {
-      templates.value = items(extra)
+      templates.value = items(extra).filter(item => item.spec?.initMode === 'cloudInit')
       purchasePrices.value = prices
       scheduleQuote()
     }
@@ -284,7 +284,7 @@ async function buy() {
   await run('/orders', orderRequest())
 }
 function openAppDrawer() {
-  draft.value = { name: '', shell: '', order: 0 }
+  draft.value = { name: '', cloudConfig: '#cloud-config\npackages:\n  - curl\n', order: 0 }
   appError.value = ''
   appDrawerOpen.value = true
 }
@@ -292,7 +292,7 @@ async function createConfig() {
   appSaving.value = true
   appError.value = ''
   try {
-    await api('/preinstall-applications', { method: 'POST', body: JSON.stringify({ metadata: { name: draft.value.name }, spec: { enabled: true, order: Number(draft.value.order), shell: draft.value.shell } }) })
+    await api('/preinstall-applications', { method: 'POST', body: JSON.stringify({ metadata: { name: draft.value.name }, spec: { enabled: true, order: Number(draft.value.order), cloudConfig: draft.value.cloudConfig } }) })
     appDrawerOpen.value = false
     notice.value = '初始化配置已创建。'
     await load()
@@ -386,10 +386,10 @@ onUnmounted(() => { window.removeEventListener('hashchange', syncHostRoute) })
       <template v-if="section === 'templates'">
         <div class="page-tabs" role="tablist" aria-label="系统模板管理"><button type="button" role="tab" :aria-selected="templateTab === 'templates'" :class="{ active: templateTab === 'templates' }" @click="templateTab = 'templates'">系统模板</button><button type="button" role="tab" :aria-selected="templateTab === 'apps'" :class="{ active: templateTab === 'apps' }" @click="templateTab = 'apps'">初始化配置</button></div>
         <SystemTemplates v-if="templateTab === 'templates'" :rows="rows" :loading="loading" @saved="load" @navigate="go" />
-        <section v-else class="panel form-panel"><div class="panel-head"><h2>初始化配置</h2><button class="primary" @click="openAppDrawer">＋ 新建初始化配置</button></div><div class="table-wrap app-config-table"><table><thead><tr><th>名称</th><th>执行顺序</th><th>操作</th></tr></thead><tbody><tr v-for="row in appRows" :key="nameOf(row)"><td>{{ nameOf(row) }}</td><td>{{ row.spec?.order }}</td><td class="actions"><button class="text danger" @click="remove(`/preinstall-applications/${encodeURIComponent(nameOf(row))}`)">删除</button></td></tr></tbody></table></div><div v-if="!appRows.length" class="empty">暂无初始化配置</div></section>
+        <section v-else class="panel form-panel"><div class="panel-head"><h2>初始化配置</h2><button class="primary" @click="openAppDrawer">＋ 新建初始化配置</button></div><div class="table-wrap app-config-table"><table><thead><tr><th>名称</th><th>执行顺序</th><th>类型</th><th>操作</th></tr></thead><tbody><tr v-for="row in appRows" :key="nameOf(row)"><td>{{ nameOf(row) }}</td><td>{{ row.spec?.order }}</td><td>{{ row.spec?.cloudConfig || row.spec?.hasCloudConfig ? 'cloud-init' : '旧版 Shell' }}</td><td class="actions"><button class="text danger" @click="remove(`/preinstall-applications/${encodeURIComponent(nameOf(row))}`)">删除</button></td></tr></tbody></table></div><div v-if="!appRows.length" class="empty">暂无初始化配置</div></section>
       </template>
       <a-drawer v-model:visible="appDrawerOpen" title="新建初始化配置" width="min(560px, 100vw)" :footer="false" :unmount-on-close="true">
-        <form @submit.prevent="createConfig"><p v-if="appError" class="alert" role="alert">{{ appError }}</p><div class="grid"><label>名称<input v-model.trim="draft.name" required maxlength="63" placeholder="唯一名称" /></label><label>执行顺序<input v-model.number="draft.order" type="number" required /></label><label class="script-field">Shell 脚本<textarea v-model="draft.shell" required rows="10" /></label></div><div class="app-drawer-actions"><button type="button" class="light" @click="appDrawerOpen = false">取消</button><button class="primary" :disabled="appSaving">{{ appSaving ? '保存中…' : '保存配置' }}</button></div></form>
+        <form @submit.prevent="createConfig"><p v-if="appError" class="alert" role="alert">{{ appError }}</p><div class="grid"><label>名称<input v-model.trim="draft.name" required maxlength="63" placeholder="唯一名称" /></label><label>合并顺序<input v-model.number="draft.order" type="number" required /></label><label class="script-field">cloud-config YAML<textarea v-model="draft.cloudConfig" required rows="10" spellcheck="false" /></label></div><p class="hint">以 #cloud-config 开头；同名字段以后项为准，列表按顺序追加，实际执行遵循 cloud-init 模块阶段。</p><div class="app-drawer-actions"><button type="button" class="light" @click="appDrawerOpen = false">取消</button><button class="primary" :disabled="appSaving">{{ appSaving ? '保存中…' : '保存配置' }}</button></div></form>
       </a-drawer>
       <UpgradeVersions v-if="section === 'versions'" :rows="rows" :loading="loading" @saved="load" />
       <section v-if="section === 'orders'" class="panel">
@@ -405,12 +405,12 @@ onUnmounted(() => { window.removeEventListener('hashchange', syncHostRoute) })
       <section v-else-if="section === 'hosts' && !hostRouteName" class="panel">
         <div class="panel-head"><span>{{ loading ? '正在加载…' : `${rows.length} 台主机` }}</span></div>
         <div v-if="!loading && !rows.length" class="empty">暂无记录。可从购买页面创建第一台主机。</div>
-        <div v-else class="table-wrap host-table"><table><thead><tr><th>主机名称</th><th>系统模板</th><th>CPU</th><th>内存</th><th>系统盘</th><th>带宽</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td><a class="table-link mono" :href="`#hosts/${encodeURIComponent(nameOf(row))}`" @click.prevent="openHost(row)">{{ nameOf(row) }}</a></td><td><span class="host-cell-label">系统模板</span>{{ row.spec?.templateName || '—' }}</td><td><span class="host-cell-label">CPU</span>{{ row.spec?.cpu == null ? '—' : `${row.spec.cpu} 核` }}</td><td><span class="host-cell-label">内存</span>{{ row.spec?.memory || '—' }}</td><td><span class="host-cell-label">系统盘</span>{{ row.spec?.systemDiskGi == null ? '—' : `${row.spec.systemDiskGi} GiB` }}</td><td><span class="host-cell-label">带宽</span>{{ row.spec?.bandwidthMbps == null ? '—' : `${row.spec.bandwidthMbps} Mbps` }}</td><td><span class="status">{{ phaseOf(row) }}</span></td><td class="actions"><button class="text" @click="run(`/csms/${encodeURIComponent(nameOf(row))}/preinstall`)">预装</button><button class="text" @click="openHost(row)">详情</button></td></tr></tbody></table></div>
+        <div v-else class="table-wrap host-table"><table><thead><tr><th>主机名称</th><th>系统模板</th><th>CPU</th><th>内存</th><th>系统盘</th><th>带宽</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td><a class="table-link mono" :href="`#hosts/${encodeURIComponent(nameOf(row))}`" @click.prevent="openHost(row)">{{ nameOf(row) }}</a></td><td><span class="host-cell-label">系统模板</span>{{ row.spec?.templateName || '—' }}</td><td><span class="host-cell-label">CPU</span>{{ row.spec?.cpu == null ? '—' : `${row.spec.cpu} 核` }}</td><td><span class="host-cell-label">内存</span>{{ row.spec?.memory || '—' }}</td><td><span class="host-cell-label">系统盘</span>{{ row.spec?.systemDiskGi == null ? '—' : `${row.spec.systemDiskGi} GiB` }}</td><td><span class="host-cell-label">带宽</span>{{ row.spec?.bandwidthMbps == null ? '—' : `${row.spec.bandwidthMbps} Mbps` }}</td><td><span class="status">{{ phaseOf(row) }}</span></td><td class="actions"><button v-if="row.status?.initMode !== 'cloudInit'" class="text" @click="run(`/csms/${encodeURIComponent(nameOf(row))}/preinstall`)">预装</button><button class="text" @click="openHost(row)">详情</button></td></tr></tbody></table></div>
       </section>
       <section v-else-if="!hostRouteName && !['purchase', 'pricing', 'templates', 'versions', 'hosts'].includes(section)" class="panel">
         <div class="panel-head"><span>{{ loading ? '正在加载…' : `${rows.length} 条记录` }}</span></div>
         <div v-if="!loading && rows.length === 0" class="empty">暂无记录。</div>
-        <div v-else class="table-wrap execution-table"><table><thead><tr><th>名称 / 订单号</th><th>状态</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td class="mono">{{ nameOf(row) }}</td><td><span class="status">{{ phaseOf(row) }}</span></td></tr></tbody></table></div>
+        <div v-else class="table-wrap execution-table"><table><thead><tr><th>名称 / 订单号</th><th>状态</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td class="mono">{{ nameOf(row) }}<details v-if="row.status?.log"><summary>初始化日志</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">{{ row.status.log }}</pre></details></td><td><span class="status">{{ phaseOf(row) }}</span></td></tr></tbody></table></div>
       </section>
       <HostDetail v-if="section === 'hosts' && hostRouteName && !terminalPage && selected" :host="selected" :versions="versions" :ssh-host="sshHost" :loading="hostLoading" @back="go('hosts')" @refresh="loadHost(hostRouteName)" @preinstall="run(`/csms/${encodeURIComponent(hostRouteName)}/preinstall`)" @upgrade="versionName => run(`/csms/${encodeURIComponent(hostRouteName)}/upgrade`, { versionName })" @terminal="openTerminal" @add-key="async (publicKey, done) => { if ((await run(`/csms/${encodeURIComponent(hostRouteName)}/ssh-keys`, { publicKey })) !== undefined) done() }" @add-jump-key="async (publicKey, done) => { if ((await run(`/csms/${encodeURIComponent(hostRouteName)}/jump-keys`, { publicKey })) !== undefined) done() }" />
       <section v-else-if="section === 'hosts' && hostRouteName && !terminalPage && hostLoading" class="panel"><p class="hint">正在加载主机详情…</p></section>
@@ -592,6 +592,8 @@ input[type='checkbox'] { width: auto; min-height: 0; padding: 0; accent-color: r
   .combination-list td:nth-child(6)::before { content: '续费折扣（%）'; }
   .combination-list input { min-width: 0; }
   .app-config-table td:nth-child(2)::before { content: '执行顺序'; }
+  .app-config-table td:nth-child(3)::before { content: '类型'; }
+  .app-config-table td:nth-child(4)::before { content: '操作'; }
   .execution-table td:nth-child(2)::before { content: '状态'; }
   .version-page td:nth-child(2)::before { content: '版本号'; }
   .version-page td:nth-child(3)::before { content: '目标模板'; }

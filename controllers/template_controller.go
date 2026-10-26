@@ -43,6 +43,9 @@ func (r *CsmTemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err := r.Get(ctx, client.ObjectKey{Name: name}, template); err != nil {
 		return ctrl.Result{}, err
 	}
+	if template.Spec.InitMode == "cloudInit" {
+		return ctrl.Result{}, nil
+	}
 	if template.Spec.Image == "" || template.Spec.Hash == "" {
 		return ctrl.Result{}, fmt.Errorf("template %q requires image and hash", name)
 	}

@@ -76,6 +76,16 @@ func TestPricingFounderGuardAndQuote(t *testing.T) {
 	}
 }
 
+func TestRedactInitializationConfigs(t *testing.T) {
+	data, err := redactInitializationConfigs(json.RawMessage(`{"metadata":{"resourceVersion":"1"},"items":[{"metadata":{"name":"cfg"},"spec":{"shell":"echo secret-shell","cloudConfig":"#cloud-config\npassword: secret-cloud","order":2}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "secret-shell") || strings.Contains(string(data), "secret-cloud") || !strings.Contains(string(data), `"hasShell":true`) || !strings.Contains(string(data), `"hasCloudConfig":true`) || !strings.Contains(string(data), `"resourceVersion":"1"`) {
+		t.Fatalf("config redaction failed: %s", data)
+	}
+}
+
 type backendStub struct {
 	namespace string
 	actions   int

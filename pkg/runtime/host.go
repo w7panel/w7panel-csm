@@ -91,6 +91,13 @@ func Service(host *api.Csm) *corev1.Service {
 }
 func ptr(s string) *string { return &s }
 
+func CloudInitSecretName(host *api.Csm) string { return "csm-cloudinit-" + string(host.UID) }
+
+func ConfigureCloudInit(dep *appsv1.Deployment, host *api.Csm) {
+	dep.Spec.Template.Spec.Volumes = append(dep.Spec.Template.Spec.Volumes, corev1.Volume{Name: "cloud-init", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: CloudInitSecretName(host)}}})
+	dep.Spec.Template.Spec.Containers[0].VolumeMounts = append(dep.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{Name: "cloud-init", MountPath: "/var/lib/cloud/seed/nocloud", ReadOnly: true})
+}
+
 // ConfigureSSHGateway mounts only this host's identity and the public user CA.
 func ConfigureSSHGateway(dep *appsv1.Deployment, host *api.Csm) {
 	mode := int32(0400)

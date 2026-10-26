@@ -270,6 +270,9 @@ func (s *Server) list(kind string) http.HandlerFunc {
 			ns = ""
 		}
 		data, err := s.Backend.List(r.Context(), kind, ns)
+		if err == nil && kind == "preinstall-applications" && !identity(r.Context()).Founder {
+			data, err = redactInitializationConfigs(data)
+		}
 		writeResult(w, data, err)
 	}
 }
@@ -288,7 +291,53 @@ func (s *Server) get(kind string) http.HandlerFunc {
 			return
 		}
 		data, err := s.Backend.Get(r.Context(), kind, ns, name)
+		if err == nil && kind == "preinstall-applications" && !identity(r.Context()).Founder {
+			data, err = redactInitializationConfig(data)
+		}
 		writeResult(w, data, err)
+	}
+}
+
+func redactInitializationConfigs(data json.RawMessage) (json.RawMessage, error) {
+	var list map[string]any
+	if err := json.Unmarshal(data, &list); err != nil {
+		return nil, err
+	}
+	items, ok := list["items"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("invalid initialization config list")
+	}
+	for _, value := range items {
+		if item, ok := value.(map[string]any); ok {
+			redactInitializationConfigObject(item)
+		}
+	}
+	return json.Marshal(list)
+}
+
+func redactInitializationConfig(data json.RawMessage) (json.RawMessage, error) {
+	var item map[string]any
+	if err := json.Unmarshal(data, &item); err != nil {
+		return nil, err
+	}
+	redactInitializationConfigObject(item)
+	return json.Marshal(item)
+}
+
+func redactInitializationConfigObject(item map[string]any) {
+	spec, _ := item["spec"].(map[string]any)
+	if spec == nil {
+		return
+	}
+	for _, key := range []string{"shell", "cloudConfig"} {
+		if value, ok := spec[key].(string); ok && value != "" {
+			if key == "shell" {
+				spec["hasShell"] = true
+			} else {
+				spec["hasCloudConfig"] = true
+			}
+			delete(spec, key)
+		}
 	}
 }
 func (s *Server) action(kind, action string) http.HandlerFunc {
@@ -344,8 +393,18 @@ func (s *Server) createOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Action == "buy" {
 		if req.Kind == "csm" {
-			if _, err := s.Backend.Get(r.Context(), "system-templates", "", req.TemplateName); err != nil {
+			raw, err := s.Backend.Get(r.Context(), "system-templates", "", req.TemplateName)
+			if err != nil {
 				writeResult(w, nil, err)
+				return
+			}
+			var template struct {
+				Spec struct {
+					InitMode string `json:"initMode"`
+				} `json:"spec"`
+			}
+			if json.Unmarshal(raw, &template) != nil || template.Spec.InitMode != "cloudInit" {
+				respondError(w, 409, "template is unavailable for new purchases")
 				return
 			}
 		}

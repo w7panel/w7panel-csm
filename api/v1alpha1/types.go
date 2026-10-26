@@ -45,6 +45,7 @@ type CsmSpec struct {
 
 type CsmStatus struct {
 	Phase         string `json:"phase,omitempty"`
+	InitMode      string `json:"initMode,omitempty"`
 	SystemPVCName string `json:"systemPVCName,omitempty"`
 	SSHPort       int32  `json:"sshPort,omitempty"`
 	SSHHost       string `json:"sshHost,omitempty"`

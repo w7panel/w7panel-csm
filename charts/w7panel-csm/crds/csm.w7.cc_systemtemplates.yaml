@@ -48,6 +48,10 @@
                   "image": {
                     "type": "string"
                   },
+                  "initMode": {
+                    "type": "string",
+                    "enum": ["cloudInit"]
+                  },
                   "preinstallApplications": {
                     "type": "array",
                     "items": {

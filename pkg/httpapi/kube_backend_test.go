@@ -177,6 +177,26 @@ func TestSystemTemplateSave(t *testing.T) {
 	}
 }
 
+func TestCloudInitTemplateCannotBeUpgradeTarget(t *testing.T) {
+	posted := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/apis/csm.w7.cc/v1alpha1/systemtemplates/cloud" {
+			w.Write([]byte(`{"metadata":{"name":"cloud"},"spec":{"initMode":"cloudInit"}}`))
+			return
+		}
+		if r.Method == http.MethodPost {
+			posted = true
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	b := KubeBackend{BaseURL: server.URL, Client: server.Client()}
+	_, err := b.Action(context.Background(), "upgrade-versions", "", "", "create", json.RawMessage(`{"metadata":{"name":"cloud-v1"},"spec":{"templateName":"cloud","version":"24.04"}}`))
+	if !errors.Is(err, ErrConflict) || posted {
+		t.Fatalf("cloud-init target accepted: posted=%v err=%v", posted, err)
+	}
+}
+
 func TestUpgradeSnapshotsVersionPolicies(t *testing.T) {
 	var created map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

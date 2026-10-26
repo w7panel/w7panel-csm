@@ -75,6 +75,8 @@ spec:
                 type: string
               phase:
                 type: string
+              initMode:
+                type: string
               sshPort:
                 format: int32
                 type: integer
