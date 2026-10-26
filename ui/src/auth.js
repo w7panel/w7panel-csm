@@ -72,7 +72,7 @@ export async function startLogin() {
   const verifier = random(32)
   sessionStorage.setItem(stateKey, state)
   sessionStorage.setItem(verifierKey, verifier)
-  sessionStorage.setItem(redirectKey, window.location.hash || '#hosts')
+  sessionStorage.setItem(redirectKey, window.location.hash || '#/hosts')
   const url = new URL(config.authorization_endpoint || config.authorizationEndpoint)
   url.searchParams.set('client_id', config.client_id || config.clientId)
   url.searchParams.set('redirect_uri', config.redirect_uri || config.redirectUri)
@@ -97,8 +97,9 @@ export async function finishLogin() {
   if (result.refresh_token) localStorage.setItem('csm-refresh-token', result.refresh_token)
   sessionStorage.removeItem(stateKey)
   sessionStorage.removeItem(verifierKey)
-  const redirect = sessionStorage.getItem(redirectKey) || '#hosts'
+  const redirect = sessionStorage.getItem(redirectKey) || '#/hosts'
   sessionStorage.removeItem(redirectKey)
-  history.replaceState(null, '', window.location.pathname === '/callback' ? '/' + redirect : window.location.pathname + redirect)
-  return true
+  const path = redirect.startsWith('#/') ? redirect.slice(1) : '/hosts'
+  history.replaceState(null, '', (window.location.pathname === '/callback' ? '/' : window.location.pathname) + '#' + path)
+  return path
 }

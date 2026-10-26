@@ -1,5 +1,6 @@
 <script setup>
-import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { api, items } from './api'
 import { finishLogin, startLogin } from './auth'
 import SystemTemplates from './SystemTemplates.vue'
@@ -13,12 +14,13 @@ const tabs = [
   ['disks', '数据管理'],
   ['versions', '版本升级'], ['pricing', '费用设置'],
 ]
-function hostNameFromHash() { const match = location.hash.match(/^#hosts\/([^/]+)(?:\/terminal)?$/); try { return match ? decodeURIComponent(match[1]) : '' } catch { return '' } }
-const hostRouteName = ref(hostNameFromHash())
-const terminalPage = ref(/^#hosts\/[^/]+\/terminal$/.test(location.hash))
+const route = useRoute()
+const router = useRouter()
+const hostRouteName = computed(() => route.params.name || '')
+const terminalPage = computed(() => route.name === 'terminal')
 const hostLoading = ref(false)
-const section = ref(hostRouteName.value ? 'hosts' : location.hash.slice(1) === 'policies' ? 'versions' : location.hash.slice(1) === 'apps' ? 'templates' : location.hash.slice(1) === 'keys' ? 'hosts' : location.hash.slice(1) || 'hosts')
-const templateTab = ref(location.hash.slice(1) === 'apps' ? 'apps' : 'templates')
+const section = computed(() => route.meta.section || route.name || 'hosts')
+const templateTab = computed(() => route.name === 'apps' ? 'apps' : 'templates')
 const mobileMenuOpen = ref(false)
 const loading = ref(false)
 const loggedIn = ref(Boolean(localStorage.getItem('csm-token')))
@@ -95,19 +97,19 @@ let terminalPageFromDetail = false
 function openTerminal() {
   if (window.matchMedia('(max-width: 600px)').matches) {
     terminalPageFromDetail = true
-    location.hash = `#hosts/${encodeURIComponent(hostRouteName.value)}/terminal`
+    router.push({ name: 'terminal', params: { name: hostRouteName.value } })
   } else terminalOpen.value = true
 }
 function closeTerminal() {
   if (!terminalPage.value) { terminalOpen.value = false; return }
-  if (terminalPageFromDetail) history.back()
-  else location.replace(`#hosts/${encodeURIComponent(hostRouteName.value)}`)
+  if (terminalPageFromDetail) router.back()
+  else router.replace({ name: 'host', params: { name: hostRouteName.value } })
 }
 const title = computed(() => section.value === 'purchase' ? '购买' : tabs.find(([id]) => id === section.value)?.[1] || '主机')
 const resource = { hosts: 'csms', templates: 'system-templates', preinstall: 'preinstall-executions', upgrade: 'upgrade-executions', orders: 'orders', disks: 'data-disks', apps: 'preinstall-applications', versions: 'upgrade-versions' }
 
 async function login() { try { await startLogin() } catch (e) { error.value = e.message } }
-function go(id) { if (id === 'apps') { templateTab.value = 'apps'; id = 'templates' } notice.value = ''; payment.value = null; section.value = id; hostRouteName.value = ''; location.hash = id; selected.value = null; terminalOpen.value = false; terminalPage.value = false; mobileMenuOpen.value = false }
+function go(id) { notice.value = ''; payment.value = null; selected.value = null; terminalOpen.value = false; mobileMenuOpen.value = false; router.push({ name: id }) }
 function orderForDisk(action, disk) {
   form.value = { kind: 'dataDisk', action, name: disk?.metadata?.name || '', templateName: '', cpu: 0, memoryGi: 0, storageGi: action === 'expand' ? Number(disk.spec?.storageGi || 0) + 10 : action === 'buy' ? 10 : 0, bandwidthMbps: 0, quantity: 1, unit: 'month' }
   go('purchase')
@@ -250,19 +252,16 @@ async function loadHost(name) {
 }
 function openHost(row) {
   const name = nameOf(row)
-  const hash = `#hosts/${encodeURIComponent(name)}`
-  if (location.hash === hash) loadHost(name)
-  else location.hash = hash
+  if (hostRouteName.value === name && route.name === 'host') loadHost(name)
+  else router.push({ name: 'host', params: { name } })
 }
-function syncHostRoute() {
+function syncRoute() {
   notice.value = ''; payment.value = null
-  const name = hostNameFromHash()
-  terminalPage.value = /^#hosts\/[^/]+\/terminal$/.test(location.hash)
+  const name = hostRouteName.value
   if (!terminalPage.value) terminalPageFromDetail = false
   terminalOpen.value = false
-  hostRouteName.value = name
-  if (name) { const wasHost = section.value === 'hosts'; section.value = 'hosts'; if (!wasHost || nameOf(selected.value) !== name) { selected.value = null; loadHost(name) } }
-  else if (section.value === 'hosts') { selected.value = null; terminalOpen.value = false }
+  if (name) { if (nameOf(selected.value) !== name) { selected.value = null; loadHost(name) } }
+  else selected.value = null
 }
 async function run(path, body) {
   error.value = ''; notice.value = ''; payment.value = null
@@ -302,6 +301,7 @@ async function createConfig() {
 function nameOf(row) { return row?.metadata?.name || row?.name || row?.orderSn || '—' }
 function phaseOf(row) { return row.status?.phase || row.status || row.spec?.order?.status || '—' }
 watch(section, load)
+watch(() => route.fullPath, syncRoute)
 watch(form, scheduleQuote, { deep: true })
 watch(() => form.value.kind, kind => {
   if (kind === 'csm') {
@@ -310,8 +310,7 @@ watch(() => form.value.kind, kind => {
     if (!form.value.bandwidthMbps) form.value.bandwidthMbps = 5
   }
 })
-onMounted(async () => { window.addEventListener('hashchange', syncHostRoute); try { if (await finishLogin()) loggedIn.value = true; const [config] = await Promise.all([api('/auth/config'), loggedIn.value ? load() : null, loggedIn.value && hostRouteName.value ? loadHost(hostRouteName.value) : null]); sshHost.value = config.sshHost || '' } catch (e) { error.value = e.message } })
-onUnmounted(() => { window.removeEventListener('hashchange', syncHostRoute) })
+onMounted(async () => { try { await router.isReady(); const redirect = await finishLogin(); if (redirect) { loggedIn.value = true; await router.replace(redirect) } const [config] = await Promise.all([api('/auth/config'), loggedIn.value ? load() : null, loggedIn.value && hostRouteName.value ? loadHost(hostRouteName.value) : null]); sshHost.value = config.sshHost || '' } catch (e) { error.value = e.message } })
 </script>
 
 <template>
@@ -330,7 +329,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', syncHostRoute) })
     </a-drawer>
     <main>
       <header class="page-header">
-        <a-breadcrumb v-if="hostRouteName" class="breadcrumb"><a-breadcrumb-item><a href="#hosts" @click.prevent="go('hosts')">主机</a></a-breadcrumb-item><a-breadcrumb-item>{{ hostRouteName }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb>
+        <a-breadcrumb v-if="hostRouteName" class="breadcrumb"><a-breadcrumb-item><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">主机</a></a-breadcrumb-item><a-breadcrumb-item>{{ hostRouteName }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb>
         <h1 v-else>{{ title }}</h1>
         <div v-if="!hostRouteName && loggedIn" class="page-actions-row"><a-button v-if="section === 'hosts'" type="primary" @click="go('purchase')">＋ 购买资源</a-button><a-button @click="load">刷新</a-button></div>
       </header>
@@ -384,7 +383,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', syncHostRoute) })
         <button class="primary" @click="savePricing">保存费用配置</button>
       </section>
       <template v-if="section === 'templates'">
-        <div class="page-tabs" role="tablist" aria-label="系统模板管理"><button type="button" role="tab" :aria-selected="templateTab === 'templates'" :class="{ active: templateTab === 'templates' }" @click="templateTab = 'templates'">系统模板</button><button type="button" role="tab" :aria-selected="templateTab === 'apps'" :class="{ active: templateTab === 'apps' }" @click="templateTab = 'apps'">初始化配置</button></div>
+        <div class="page-tabs" role="tablist" aria-label="系统模板管理"><button type="button" role="tab" :aria-selected="templateTab === 'templates'" :class="{ active: templateTab === 'templates' }" @click="go('templates')">系统模板</button><button type="button" role="tab" :aria-selected="templateTab === 'apps'" :class="{ active: templateTab === 'apps' }" @click="go('apps')">初始化配置</button></div>
         <SystemTemplates v-if="templateTab === 'templates'" :rows="rows" :loading="loading" @saved="load" @navigate="go" />
         <section v-else class="panel form-panel"><div class="panel-head"><h2>初始化配置</h2><button class="primary" @click="openAppDrawer">＋ 新建初始化配置</button></div><div class="table-wrap app-config-table"><table><thead><tr><th>名称</th><th>执行顺序</th><th>类型</th><th>操作</th></tr></thead><tbody><tr v-for="row in appRows" :key="nameOf(row)"><td>{{ nameOf(row) }}</td><td>{{ row.spec?.order }}</td><td>{{ row.spec?.cloudConfig || row.spec?.hasCloudConfig ? 'cloud-init' : '旧版 Shell' }}</td><td class="actions"><button class="text danger" @click="remove(`/preinstall-applications/${encodeURIComponent(nameOf(row))}`)">删除</button></td></tr></tbody></table></div><div v-if="!appRows.length" class="empty">暂无初始化配置</div></section>
       </template>
@@ -405,7 +404,7 @@ onUnmounted(() => { window.removeEventListener('hashchange', syncHostRoute) })
       <section v-else-if="section === 'hosts' && !hostRouteName" class="panel">
         <div class="panel-head"><span>{{ loading ? '正在加载…' : `${rows.length} 台主机` }}</span></div>
         <div v-if="!loading && !rows.length" class="empty">暂无记录。可从购买页面创建第一台主机。</div>
-        <div v-else class="table-wrap host-table"><table><thead><tr><th>主机名称</th><th>系统模板</th><th>CPU</th><th>内存</th><th>系统盘</th><th>带宽</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td><a class="table-link mono" :href="`#hosts/${encodeURIComponent(nameOf(row))}`" @click.prevent="openHost(row)">{{ nameOf(row) }}</a></td><td><span class="host-cell-label">系统模板</span>{{ row.spec?.templateName || '—' }}</td><td><span class="host-cell-label">CPU</span>{{ row.spec?.cpu == null ? '—' : `${row.spec.cpu} 核` }}</td><td><span class="host-cell-label">内存</span>{{ row.spec?.memory || '—' }}</td><td><span class="host-cell-label">系统盘</span>{{ row.spec?.systemDiskGi == null ? '—' : `${row.spec.systemDiskGi} GiB` }}</td><td><span class="host-cell-label">带宽</span>{{ row.spec?.bandwidthMbps == null ? '—' : `${row.spec.bandwidthMbps} Mbps` }}</td><td><span class="status">{{ phaseOf(row) }}</span></td><td class="actions"><button v-if="row.status?.initMode !== 'cloudInit'" class="text" @click="run(`/csms/${encodeURIComponent(nameOf(row))}/preinstall`)">预装</button><button class="text" @click="openHost(row)">详情</button></td></tr></tbody></table></div>
+        <div v-else class="table-wrap host-table"><table><thead><tr><th>主机名称</th><th>系统模板</th><th>CPU</th><th>内存</th><th>系统盘</th><th>带宽</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td><a class="table-link mono" :href="router.resolve({ name: 'host', params: { name: nameOf(row) } }).href" @click.prevent="openHost(row)">{{ nameOf(row) }}</a></td><td><span class="host-cell-label">系统模板</span>{{ row.spec?.templateName || '—' }}</td><td><span class="host-cell-label">CPU</span>{{ row.spec?.cpu == null ? '—' : `${row.spec.cpu} 核` }}</td><td><span class="host-cell-label">内存</span>{{ row.spec?.memory || '—' }}</td><td><span class="host-cell-label">系统盘</span>{{ row.spec?.systemDiskGi == null ? '—' : `${row.spec.systemDiskGi} GiB` }}</td><td><span class="host-cell-label">带宽</span>{{ row.spec?.bandwidthMbps == null ? '—' : `${row.spec.bandwidthMbps} Mbps` }}</td><td><span class="status">{{ phaseOf(row) }}</span></td><td class="actions"><button v-if="row.status?.initMode !== 'cloudInit'" class="text" @click="run(`/csms/${encodeURIComponent(nameOf(row))}/preinstall`)">预装</button><button class="text" @click="openHost(row)">详情</button></td></tr></tbody></table></div>
       </section>
       <section v-else-if="!hostRouteName && !['purchase', 'pricing', 'templates', 'versions', 'hosts'].includes(section)" class="panel">
         <div class="panel-head"><span>{{ loading ? '正在加载…' : `${rows.length} 条记录` }}</span></div>
