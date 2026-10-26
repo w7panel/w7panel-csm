@@ -97,11 +97,11 @@ downZpk:
 	sudo mv /tmp/zpk /usr/local/bin/zpk
 
 loginZpk:
-	@zpk login --username=w7admin --password="$${PASSWORD:?Set PASSWORD}" --host=zpk.idc.w7.com
+	@zpk login --username=w7admin --password="$${PASSWORD:?Set PASSWORD}" --host=zpk.fan.b2.sz.w7.com
 
 publishZpk: packageHelm build-ui
 	cd ui/dist && rm -f dist.zip && zip -qr dist.zip .
-	zpk use w7panel-csm
+	zpk use --name=w7panel-csm
 	zpk attach add --path=$(CHART_PACKAGE) --type=helm
 	zpk attach add --path=./ui/dist/dist.zip --type=frontend
 	zpk push
