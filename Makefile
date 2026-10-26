@@ -7,6 +7,8 @@ KO_PLATFORM ?= linux/amd64
 KO_IMAGE_TAG ?= $(if $(CNB_BRANCH),$(CNB_BRANCH),$(shell git describe --tags --exact-match 2>/dev/null || git branch --show-current))
 CONTROLLER_GEN ?= controller-gen
 CHART_DIR ?= charts/w7panel-csm
+CHART_VERSION = $(shell sed -n 's/^version:[[:space:]]*//p' $(CHART_DIR)/Chart.yaml | head -n 1)
+CHART_PACKAGE = ./w7panel-csm-$(CHART_VERSION).tgz
 NAMESPACE ?= default
 CSM_SSH_GATEWAY_NAMESPACE ?= higress-system
 CSM_SSH_GATEWAY_NAME ?= gateway
@@ -16,7 +18,7 @@ GO_CACHE_DIR ?= $(CURDIR)/.cache/go
 CRD_BUILD_DIR ?= $(GO_CACHE_DIR)/crd
 GO_ENV = GOCACHE=$(GO_CACHE_DIR)/build GOMODCACHE=$(GO_CACHE_DIR)/mod GOTMPDIR=$(GO_CACHE_DIR)/tmp
 
-.PHONY: tidy fmt test build run build-ui ko-build docker-build docker-build-system manifests crd install uninstall helm-template helm-lint packageHelm deployHelm prepare-go-cache
+.PHONY: tidy fmt test build run build-ui ko-build docker-build docker-build-system manifests crd install uninstall helm-template helm-lint packageHelm deployHelm downZpk loginZpk publishZpk prepare-go-cache
 
 prepare-go-cache:
 	@mkdir -p $(GO_CACHE_DIR)/build $(GO_CACHE_DIR)/mod $(GO_CACHE_DIR)/tmp
@@ -88,3 +90,18 @@ packageHelm:
 
 deployHelm:
 	helm upgrade --install w7panel-csm $(CHART_DIR) --set image.tag=$(KO_IMAGE_TAG) --namespace $(NAMESPACE) --create-namespace $(HELM_ARGS)
+
+downZpk:
+	wget https://gh-proxy.org/https://github.com/w7panel/w7panel-zpk/releases/download/latest/w7-zpk_linux_amd64 -O /tmp/zpk
+	chmod +x /tmp/zpk
+	sudo mv /tmp/zpk /usr/local/bin/zpk
+
+loginZpk:
+	@zpk login --username=w7admin --password="$${PASSWORD:?Set PASSWORD}" --host=zpk.idc.w7.com
+
+publishZpk: packageHelm build-ui
+	cd ui/dist && rm -f dist.zip && zip -qr dist.zip .
+	zpk use w7panel-csm
+	zpk attach add --path=$(CHART_PACKAGE) --type=helm
+	zpk attach add --path=./ui/dist/dist.zip --type=frontend
+	zpk push
