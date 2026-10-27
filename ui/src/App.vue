@@ -451,7 +451,7 @@ onUnmounted(() => { if (isMicroApp) window.$wujie?.bus?.$off?.('routeChange', on
 :root {
   font-family: 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
   color: var(--color-text-1, #1d2129);
-  background: var(--color-fill-2, #f2f3f5);
+  background: #fff;
   font-size: 14px;
 }
 * { box-sizing: border-box; }
@@ -459,7 +459,7 @@ body { margin: 0; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px solid rgb(var(--primary-6, 22, 93, 255)); outline-offset: 2px; }
-.shell { display: grid; grid-template-columns: 208px minmax(0, 1fr); grid-template-rows: 60px minmax(calc(100vh - 60px), auto); min-height: 100vh; background: var(--color-fill-2, #f2f3f5); }
+.shell { display: grid; grid-template-columns: 208px minmax(0, 1fr); grid-template-rows: 60px minmax(calc(100vh - 60px), auto); min-height: 100vh; background: var(--color-fill-1, #f7f8fa); }
 .topbar { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; min-width: 0; padding: 0 24px; border-bottom: 1px solid var(--color-border-2, #e5e6eb); background: var(--color-bg-2, #fff); }
 .topbar-brand { display: flex; align-items: center; gap: 10px; color: var(--color-text-1, #1d2129); font-family: 'Segoe UI', 'PingFang SC', sans-serif; font-size: 19px; font-weight: 700; letter-spacing: .02em; }
 .topbar-brand small { margin-left: 2px; padding-left: 12px; border-left: 1px solid var(--color-border-2, #e5e6eb); color: var(--color-text-3, #86909c); font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; font-size: 12px; font-weight: 400; letter-spacing: 0; }
@@ -474,7 +474,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .app-menu .arco-menu-item.arco-menu-selected { background: var(--color-primary-light-1, #e8f3ff); }
 .mobile-menu-trigger { display: none; }
 main { grid-column: 2; grid-row: 2; min-width: 0; padding: 24px; }
-.shell--micro { display: block; }
+.shell--micro { display: block; background: #fff; }
 .shell--micro main { min-height: 100vh; padding: 20px; }
 .page-header { display: flex; align-items: end; justify-content: space-between; gap: 16px; min-height: 58px; margin-bottom: 20px; }
 .page-header--detail { min-height: 0; margin-bottom: 0; }
