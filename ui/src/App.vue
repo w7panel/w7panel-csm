@@ -90,7 +90,7 @@ const diskRows = computed(() => [
   })),
   ...rows.value,
 ])
-const draft = ref({ name: '', cloudConfig: '#cloud-config\npackages:\n  - curl\n', order: 0 })
+const draft = ref({ name: '', cloudConfig: '#cloud-config\npackages:\n  - curl\n', shell: '', kind: 'cloud', order: 0, resourceVersion: '' })
 const appDrawerOpen = ref(false)
 const appSaving = ref(false)
 const appError = ref('')
@@ -296,19 +296,27 @@ async function buy() {
   await run('/orders', orderRequest())
 }
 function openAppDrawer() {
-  draft.value = { name: '', cloudConfig: '#cloud-config\npackages:\n  - curl\n', order: 0 }
+  draft.value = { name: '', cloudConfig: '#cloud-config\npackages:\n  - curl\n', shell: '', kind: 'cloud', order: 0, resourceVersion: '' }
   appError.value = ''
   appDrawerOpen.value = true
 }
-async function createConfig() {
+function editConfig(row) {
+  draft.value = { name: nameOf(row), cloudConfig: row.spec?.cloudConfig || '', shell: row.spec?.shell || '', kind: row.spec?.shell ? 'shell' : 'cloud', order: row.spec?.order ?? 0, resourceVersion: row.metadata.resourceVersion }
+  appError.value = ''
+  appDrawerOpen.value = true
+}
+async function saveConfig() {
   appSaving.value = true
   appError.value = ''
   try {
-    await api('/preinstall-applications', { method: 'POST', body: JSON.stringify({ metadata: { name: draft.value.name }, spec: { enabled: true, order: Number(draft.value.order), cloudConfig: draft.value.cloudConfig } }) })
+    const editing = Boolean(draft.value.resourceVersion)
+    const spec = { order: Number(draft.value.order), ...(draft.value.kind === 'shell' ? { shell: draft.value.shell } : { cloudConfig: draft.value.cloudConfig }) }
+    if (!editing) spec.enabled = true
+    await api(`/preinstall-applications${editing ? `/${encodeURIComponent(draft.value.name)}` : ''}`, { method: editing ? 'PUT' : 'POST', body: JSON.stringify({ metadata: { name: draft.value.name, ...(editing ? { resourceVersion: draft.value.resourceVersion } : {}) }, spec }) })
     appDrawerOpen.value = false
-    notice.value = '初始化配置已创建。'
+    notice.value = editing ? '初始化配置已保存。' : '初始化配置已创建。'
     await load()
-  } catch (e) { appError.value = e.message }
+  } catch (e) { appError.value = e.status === 409 && draft.value.resourceVersion ? '配置已变更或内容无效，请刷新列表后重试。' : e.message }
   finally { appSaving.value = false }
 }
 function nameOf(row) { return row?.metadata?.name || row?.name || row?.orderSn || '—' }
@@ -410,10 +418,10 @@ onUnmounted(() => { if (isMicroApp) window.$wujie?.bus?.$off?.('routeChange', on
       <template v-if="section === 'templates'">
         <div class="page-tabs" role="tablist" aria-label="系统模板管理"><button type="button" role="tab" :aria-selected="templateTab === 'templates'" :class="{ active: templateTab === 'templates' }" @click="go('templates')">系统模板</button><button type="button" role="tab" :aria-selected="templateTab === 'apps'" :class="{ active: templateTab === 'apps' }" @click="go('apps')">初始化配置</button></div>
         <SystemTemplates v-if="templateTab === 'templates'" :rows="rows" :loading="loading" @saved="load" @navigate="go" />
-        <section v-else class="panel form-panel"><div class="panel-head"><h2>初始化配置</h2><button class="primary" @click="openAppDrawer">＋ 新建初始化配置</button></div><div class="table-wrap app-config-table"><table><thead><tr><th>名称</th><th>执行顺序</th><th>类型</th><th>操作</th></tr></thead><tbody><tr v-for="row in appRows" :key="nameOf(row)"><td>{{ nameOf(row) }}</td><td>{{ row.spec?.order }}</td><td>{{ row.spec?.cloudConfig || row.spec?.hasCloudConfig ? 'cloud-init' : '旧版 Shell' }}</td><td class="actions"><button class="text danger" @click="remove(`/preinstall-applications/${encodeURIComponent(nameOf(row))}`)">删除</button></td></tr></tbody></table></div><div v-if="!appRows.length" class="empty">暂无初始化配置</div></section>
+        <section v-else class="panel form-panel"><div class="panel-head"><h2>初始化配置</h2><button class="primary" @click="openAppDrawer">＋ 新建初始化配置</button></div><div class="table-wrap app-config-table"><table><thead><tr><th>名称</th><th>执行顺序</th><th>类型</th><th>操作</th></tr></thead><tbody><tr v-for="row in appRows" :key="nameOf(row)"><td>{{ nameOf(row) }}</td><td>{{ row.spec?.order }}</td><td>{{ row.spec?.cloudConfig || row.spec?.hasCloudConfig ? 'cloud-init' : '旧版 Shell' }}</td><td class="actions"><button v-if="row.spec?.cloudConfig || row.spec?.shell" class="text" @click="editConfig(row)">编辑</button><button class="text danger" @click="remove(`/preinstall-applications/${encodeURIComponent(nameOf(row))}`)">删除</button></td></tr></tbody></table></div><div v-if="!appRows.length" class="empty">暂无初始化配置</div></section>
       </template>
-      <a-drawer v-model:visible="appDrawerOpen" title="新建初始化配置" width="min(560px, 100vw)" :footer="false" :unmount-on-close="true">
-        <form @submit.prevent="createConfig"><p v-if="appError" class="alert" role="alert">{{ appError }}</p><div class="grid"><label>名称<input v-model.trim="draft.name" required maxlength="63" placeholder="唯一名称" /></label><label>合并顺序<input v-model.number="draft.order" type="number" required /></label><label class="script-field">cloud-config YAML<textarea v-model="draft.cloudConfig" required rows="10" spellcheck="false" /></label></div><p class="hint">以 #cloud-config 开头；同名字段以后项为准，列表按顺序追加，实际执行遵循 cloud-init 模块阶段。</p><div class="app-drawer-actions"><button type="button" class="light" @click="appDrawerOpen = false">取消</button><button class="primary" :disabled="appSaving">{{ appSaving ? '保存中…' : '保存配置' }}</button></div></form>
+      <a-drawer v-model:visible="appDrawerOpen" :title="draft.resourceVersion ? '编辑初始化配置' : '新建初始化配置'" width="min(560px, 100vw)" :footer="false" :unmount-on-close="true">
+        <form @submit.prevent="saveConfig"><p v-if="appError" class="alert" role="alert">{{ appError }}</p><div class="grid"><label>名称<input v-model.trim="draft.name" required maxlength="63" placeholder="唯一名称" :readonly="!!draft.resourceVersion" /></label><label>合并顺序<input v-model.number="draft.order" type="number" required /></label><label v-if="draft.kind === 'shell'" class="script-field">Shell 脚本<textarea v-model="draft.shell" required rows="10" spellcheck="false" /></label><label v-else class="script-field">cloud-config YAML<textarea v-model="draft.cloudConfig" required rows="10" spellcheck="false" /></label></div><p v-if="draft.kind === 'cloud'" class="hint">以 #cloud-config 开头；同名字段以后项为准，列表按顺序追加，实际执行遵循 cloud-init 模块阶段。</p><div class="app-drawer-actions"><button type="button" class="light" @click="appDrawerOpen = false">取消</button><button class="primary" :disabled="appSaving">{{ appSaving ? '保存中…' : '保存配置' }}</button></div></form>
       </a-drawer>
       <UpgradeVersions v-if="section === 'versions'" :rows="rows" :loading="loading" @saved="load" />
       <section v-if="section === 'orders'" class="panel">

@@ -139,6 +139,8 @@ func (b KubeBackend) Action(ctx context.Context, kind, namespace, name, action s
 		return b.createUpgradePolicy(ctx, body)
 	case kind == "upgrade-policies" && action == "delete":
 		return b.deleteUpgradePolicy(ctx, name)
+	case kind == "preinstall-applications" && action == "update":
+		return b.updatePreinstallApplication(ctx, name, body)
 	case (kind == "preinstall-applications" || kind == "upgrade-versions") && action == "create":
 		var input struct {
 			Metadata struct {
@@ -206,6 +208,48 @@ func (b KubeBackend) Action(ctx context.Context, kind, namespace, name, action s
 		return b.attachKey(ctx, namespace, name, "jumpPublicKeys", body)
 	}
 	return nil, ErrNotFound
+}
+
+func (b KubeBackend) updatePreinstallApplication(ctx context.Context, name string, body json.RawMessage) (json.RawMessage, error) {
+	var input struct {
+		Metadata struct {
+			Name            string `json:"name"`
+			ResourceVersion string `json:"resourceVersion"`
+		} `json:"metadata"`
+		Spec map[string]any `json:"spec"`
+	}
+	if json.Unmarshal(body, &input) != nil || input.Metadata.Name != name || !validName(name) || input.Metadata.ResourceVersion == "" || input.Spec == nil {
+		return nil, ErrConflict
+	}
+	order, ok := input.Spec["order"].(float64)
+	if !ok || order != float64(int32(order)) {
+		return nil, ErrConflict
+	}
+	current, err := b.object(ctx, "preinstall-applications", "", name)
+	if err != nil {
+		return nil, err
+	}
+	if current.Metadata.ResourceVersion != input.Metadata.ResourceVersion {
+		return nil, ErrConflict
+	}
+	if shell, legacy := current.Spec["shell"].(string); legacy && shell != "" {
+		shell, ok := input.Spec["shell"].(string)
+		if !ok || strings.TrimSpace(shell) == "" || input.Spec["cloudConfig"] != nil {
+			return nil, ErrConflict
+		}
+		current.Spec["shell"] = shell
+	} else {
+		config, ok := input.Spec["cloudConfig"].(string)
+		if !ok || input.Spec["shell"] != nil {
+			return nil, ErrConflict
+		}
+		if _, err := preinstall.CloudConfig(config); err != nil {
+			return nil, ErrConflict
+		}
+		current.Spec["cloudConfig"] = config
+	}
+	current.Spec["order"] = int32(order)
+	return b.update(ctx, "preinstall-applications", "", name, current)
 }
 
 func (b KubeBackend) changeVersionPolicy(ctx context.Context, versionName, policyName string, add bool) error {

@@ -177,6 +177,83 @@ func TestSystemTemplateSave(t *testing.T) {
 	}
 }
 
+func TestUpdatePreinstallApplication(t *testing.T) {
+	var saved map[string]any
+	putCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/apis/csm.w7.cc/v1alpha1/preinstallapplications/config" {
+			http.NotFound(w, r)
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			w.Write([]byte(`{"apiVersion":"csm.w7.cc/v1alpha1","kind":"PreinstallApplication","metadata":{"name":"config","resourceVersion":"4"},"spec":{"enabled":false,"order":1,"shell":"","cloudConfig":"#cloud-config\npackages: [curl]\n"}}`))
+		case http.MethodPut:
+			putCount++
+			if err := json.NewDecoder(r.Body).Decode(&saved); err != nil {
+				t.Error(err)
+			}
+			w.Write([]byte(`{}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	b := KubeBackend{BaseURL: server.URL, Client: server.Client()}
+	ctx := context.Background()
+	for _, body := range []string{
+		`{"metadata":{"name":"config","resourceVersion":"3"},"spec":{"order":2,"cloudConfig":"#cloud-config\npackages: [git]\n"}}`,
+		`{"metadata":{"name":"config","resourceVersion":"4"},"spec":{"order":2,"cloudConfig":"invalid"}}`,
+		`{"metadata":{"name":"config","resourceVersion":"4"},"spec":{"order":2,"shell":"echo changed"}}`,
+	} {
+		if _, err := b.Action(ctx, "preinstall-applications", "", "config", "update", json.RawMessage(body)); !errors.Is(err, ErrConflict) {
+			t.Fatalf("invalid update %s: %v", body, err)
+		}
+	}
+	if putCount != 0 {
+		t.Fatalf("invalid updates wrote %d times", putCount)
+	}
+	valid := json.RawMessage(`{"metadata":{"name":"config","resourceVersion":"4"},"spec":{"order":2,"cloudConfig":"#cloud-config\npackages: [git]\n"}}`)
+	if _, err := b.Action(ctx, "preinstall-applications", "", "config", "update", valid); err != nil {
+		t.Fatal(err)
+	}
+	spec := saved["spec"].(map[string]any)
+	metadata := saved["metadata"].(map[string]any)
+	if putCount != 1 || spec["enabled"] != false || spec["order"] != float64(2) || spec["cloudConfig"] != "#cloud-config\npackages: [git]\n" || metadata["resourceVersion"] != "4" {
+		t.Fatalf("saved config: %v", saved)
+	}
+}
+
+func TestUpdateLegacyPreinstallApplicationKeepsShell(t *testing.T) {
+	var saved map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/apis/csm.w7.cc/v1alpha1/preinstallapplications/legacy" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method == http.MethodGet {
+			w.Write([]byte(`{"apiVersion":"csm.w7.cc/v1alpha1","kind":"PreinstallApplication","metadata":{"name":"legacy","resourceVersion":"2"},"spec":{"enabled":true,"order":1,"shell":"echo old"}}`))
+			return
+		}
+		if r.Method == http.MethodPut {
+			json.NewDecoder(r.Body).Decode(&saved)
+			w.Write([]byte(`{}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	b := KubeBackend{BaseURL: server.URL, Client: server.Client()}
+	_, err := b.Action(context.Background(), "preinstall-applications", "", "legacy", "update", json.RawMessage(`{"metadata":{"name":"legacy","resourceVersion":"2"},"spec":{"order":3,"shell":"echo new"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := saved["spec"].(map[string]any)
+	if spec["enabled"] != true || spec["order"] != float64(3) || spec["shell"] != "echo new" || spec["cloudConfig"] != nil {
+		t.Fatalf("saved legacy config: %v", saved)
+	}
+}
+
 func TestCloudInitTemplateCannotBeUpgradeTarget(t *testing.T) {
 	posted := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

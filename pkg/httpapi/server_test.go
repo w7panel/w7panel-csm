@@ -86,6 +86,28 @@ func TestRedactInitializationConfigs(t *testing.T) {
 	}
 }
 
+func TestUpdateInitializationConfigRequiresFounder(t *testing.T) {
+	backend := &backendStub{}
+	server := NewServer(func(_ context.Context, token string) (Identity, error) {
+		return Identity{Namespace: "tenant", Founder: token == "founder"}, nil
+	}, backend, order.Service{Gateway: gatewayStub{}, Store: storeStub{}}, "")
+	for _, tc := range []struct {
+		token string
+		want  int
+	}{{"tenant", http.StatusForbidden}, {"founder", http.StatusOK}} {
+		req := httptest.NewRequest(http.MethodPut, Prefix+"/preinstall-applications/config", strings.NewReader(`{"metadata":{"name":"config","resourceVersion":"1"},"spec":{"order":2,"cloudConfig":"#cloud-config"}}`))
+		req.Header.Set("Authorization", "Bearer "+tc.token)
+		w := httptest.NewRecorder()
+		server.Handler().ServeHTTP(w, req)
+		if w.Code != tc.want {
+			t.Fatalf("%s update: got %d, want %d", tc.token, w.Code, tc.want)
+		}
+	}
+	if backend.actions != 1 {
+		t.Fatalf("backend calls: %d", backend.actions)
+	}
+}
+
 type backendStub struct {
 	namespace string
 	actions   int

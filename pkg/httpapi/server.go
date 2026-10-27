@@ -87,6 +87,7 @@ func (s *Server) Handler() http.Handler {
 	route("GET", "/preinstall-executions", s.list("preinstall-executions"))
 	route("GET", "/preinstall-applications", s.list("preinstall-applications"))
 	route("POST", "/preinstall-applications", s.action("preinstall-applications", "create"))
+	route("PUT", "/preinstall-applications/{name}", s.action("preinstall-applications", "update"))
 	route("DELETE", "/preinstall-applications/{name}", s.action("preinstall-applications", "delete"))
 	route("GET", "/upgrade-versions", s.list("upgrade-versions"))
 	route("POST", "/upgrade-versions", s.action("upgrade-versions", "create"))
