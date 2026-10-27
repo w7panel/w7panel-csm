@@ -254,7 +254,7 @@ func TestUpdateLegacyPreinstallApplicationKeepsShell(t *testing.T) {
 	}
 }
 
-func TestCloudInitTemplateCannotBeUpgradeTarget(t *testing.T) {
+func TestCloudInitTemplateCanBeUpgradeVersion(t *testing.T) {
 	posted := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/apis/csm.w7.cc/v1alpha1/systemtemplates/cloud" {
@@ -263,14 +263,51 @@ func TestCloudInitTemplateCannotBeUpgradeTarget(t *testing.T) {
 		}
 		if r.Method == http.MethodPost {
 			posted = true
+			w.Write([]byte(`{}`))
+			return
 		}
 		http.NotFound(w, r)
 	}))
 	defer server.Close()
 	b := KubeBackend{BaseURL: server.URL, Client: server.Client()}
 	_, err := b.Action(context.Background(), "upgrade-versions", "", "", "create", json.RawMessage(`{"metadata":{"name":"cloud-v1"},"spec":{"templateName":"cloud","version":"24.04"}}`))
-	if !errors.Is(err, ErrConflict) || posted {
-		t.Fatalf("cloud-init target accepted: posted=%v err=%v", posted, err)
+	if err != nil || !posted {
+		t.Fatalf("cloud-init version rejected: posted=%v err=%v", posted, err)
+	}
+}
+
+func TestUpdateUpgradePolicyKeepsVersionAndChecksResourceVersion(t *testing.T) {
+	var saved map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/apis/csm.w7.cc/v1alpha1/upgradepolicies/script" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method == http.MethodGet {
+			w.Write([]byte(`{"metadata":{"name":"script","resourceVersion":"7"},"spec":{"versionName":"v1","enabled":true,"order":1,"shell":"old"}}`))
+			return
+		}
+		if r.Method == http.MethodPut {
+			json.NewDecoder(r.Body).Decode(&saved)
+			w.Write([]byte(`{}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	b := KubeBackend{BaseURL: server.URL, Client: server.Client()}
+	if _, err := b.Action(context.Background(), "upgrade-policies", "", "script", "update", json.RawMessage(`{"metadata":{"resourceVersion":"6"},"spec":{"versionName":"v1","enabled":false,"order":2,"shell":"new"}}`)); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale policy accepted: %v", err)
+	}
+	if _, err := b.Action(context.Background(), "upgrade-policies", "", "script", "update", json.RawMessage(`{"metadata":{"resourceVersion":"7"},"spec":{"versionName":"other","enabled":false,"order":2,"shell":"new"}}`)); !errors.Is(err, ErrConflict) {
+		t.Fatalf("version move accepted: %v", err)
+	}
+	if _, err := b.Action(context.Background(), "upgrade-policies", "", "script", "update", json.RawMessage(`{"metadata":{"resourceVersion":"7"},"spec":{"versionName":"v1","enabled":false,"order":2,"shell":"new"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	spec := saved["spec"].(map[string]any)
+	if spec["versionName"] != "v1" || spec["enabled"] != false || spec["order"] != float64(2) || spec["shell"] != "new" {
+		t.Fatalf("saved policy: %v", saved)
 	}
 }
 
@@ -283,7 +320,9 @@ func TestUpgradeSnapshotsVersionPolicies(t *testing.T) {
 		case "/apis/csm.w7.cc/v1alpha1/upgradeversions/next":
 			w.Write([]byte(`{"spec":{"templateName":"new","policies":["legacy"]}}`))
 		case "/apis/csm.w7.cc/v1alpha1/systemtemplates/new":
-			w.Write([]byte(`{"spec":{"hash":"new-hash"}}`))
+			w.Write([]byte(`{"spec":{"hash":"new-hash","initMode":"cloudInit"}}`))
+		case "/apis/csm.w7.cc/v1alpha1/systemtemplates/old":
+			w.Write([]byte(`{"spec":{"initMode":"cloudInit"}}`))
 		case "/apis/csm.w7.cc/v1alpha1/upgradepolicies/legacy":
 			w.Write([]byte(`{"spec":{"versionName":"next","enabled":true,"order":2,"shell":"echo upgrade"}}`))
 		case "/apis/csm.w7.cc/v1alpha1/upgradeexecutions":

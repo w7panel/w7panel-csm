@@ -181,6 +181,15 @@ func (r *UpgradeExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		if target.Spec.Hash != execution.Spec.TargetTemplateHash {
 			return ctrl.Result{}, failUpgrade(ctx, r.Client, execution, "target template changed")
 		}
+		if target.Spec.InitMode == "cloudInit" {
+			source := &csm.SystemTemplate{}
+			if err := r.Get(ctx, client.ObjectKey{Name: execution.Spec.SourceTemplateName}, source); err != nil {
+				return ctrl.Result{}, err
+			}
+			if source.Spec.InitMode != "cloudInit" {
+				return ctrl.Result{}, failUpgrade(ctx, r.Client, execution, "cloud-init upgrade requires a cloud-init source template")
+			}
+		}
 		version := &csm.UpgradeVersion{}
 		if err := r.Get(ctx, client.ObjectKey{Name: execution.Spec.VersionName}, version); err != nil {
 			return ctrl.Result{}, err

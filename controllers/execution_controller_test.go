@@ -183,3 +183,36 @@ func TestUpgradeWaitsForReadyAndRollsBackFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestCloudInitUpgradeRequiresCloudInitSource(t *testing.T) {
+	for _, sourceMode := range []string{"", "cloudInit"} {
+		t.Run(sourceMode, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			if err := csm.AddToScheme(scheme); err != nil {
+				t.Fatal(err)
+			}
+			host := &csm.Csm{ObjectMeta: metav1.ObjectMeta{Name: "host", Namespace: "users"}, Spec: csm.CsmSpec{TemplateName: "old"}, Status: csm.CsmStatus{TemplateHash: "old-hash", Phase: "Ready"}}
+			source := &csm.SystemTemplate{ObjectMeta: metav1.ObjectMeta{Name: "old"}, Spec: csm.SystemTemplateSpec{Hash: "old-hash", InitMode: sourceMode}}
+			target := &csm.SystemTemplate{ObjectMeta: metav1.ObjectMeta{Name: "new"}, Spec: csm.SystemTemplateSpec{Hash: "new-hash", InitMode: "cloudInit"}}
+			version := &csm.UpgradeVersion{ObjectMeta: metav1.ObjectMeta{Name: "v2"}, Spec: csm.UpgradeVersionSpec{TemplateName: "new"}}
+			execution := &csm.UpgradeExecution{ObjectMeta: metav1.ObjectMeta{Name: "upgrade-host"}, Spec: csm.UpgradeExecutionSpec{CsmNamespace: "users", CsmName: "host", ApprovedBy: "alice", SourceTemplateName: "old", SourceTemplateHash: "old-hash", TargetTemplateName: "new", TargetTemplateHash: "new-hash", VersionName: "v2"}}
+			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(host, execution).WithObjects(host, source, target, version, execution).Build()
+			r := &UpgradeExecutionReconciler{Client: c, Runner: &testRunner{}}
+			if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: execution.Name}}); err != nil {
+				t.Fatal(err)
+			}
+			if err := c.Get(context.Background(), client.ObjectKeyFromObject(host), host); err != nil {
+				t.Fatal(err)
+			}
+			if err := c.Get(context.Background(), client.ObjectKeyFromObject(execution), execution); err != nil {
+				t.Fatal(err)
+			}
+			if sourceMode == "cloudInit" && (host.Spec.TemplateName != "new" || execution.Status.Phase != "applying") {
+				t.Fatalf("cloud-init upgrade was not applied: %+v %+v", host.Spec, execution.Status)
+			}
+			if sourceMode == "" && (host.Spec.TemplateName != "old" || execution.Status.Phase != "failed") {
+				t.Fatalf("legacy source was accepted: %+v %+v", host.Spec, execution.Status)
+			}
+		})
+	}
+}

@@ -164,6 +164,7 @@ func TestTenantAndFounderGuards(t *testing.T) {
 		{"/csm-api/v1/csms/host", "GET", 200, "tenant-a"},
 		{"/csm-api/v1/system-templates", "POST", 403, ""},
 		{"/csm-api/v1/system-templates/ubuntu-24.04", "PUT", 403, ""},
+		{"/csm-api/v1/upgrade-policies/script", "PUT", 403, ""},
 	} {
 		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(`{}`))
 		req.Header.Set("Authorization-csm", "Bearer good")

@@ -94,6 +94,7 @@ func (s *Server) Handler() http.Handler {
 	route("DELETE", "/upgrade-versions/{name}", s.action("upgrade-versions", "delete"))
 	route("GET", "/upgrade-policies", s.list("upgrade-policies"))
 	route("POST", "/upgrade-policies", s.action("upgrade-policies", "create"))
+	route("PUT", "/upgrade-policies/{name}", s.action("upgrade-policies", "update"))
 	route("DELETE", "/upgrade-policies/{name}", s.action("upgrade-policies", "delete"))
 	route("GET", "/upgrade-executions", s.list("upgrade-executions"))
 	route("GET", "/data-disks", s.list("data-disks"))

@@ -137,6 +137,8 @@ func (b KubeBackend) Action(ctx context.Context, kind, namespace, name, action s
 		return b.saveSystemTemplate(ctx, name, action, body)
 	case kind == "upgrade-policies" && action == "create":
 		return b.createUpgradePolicy(ctx, body)
+	case kind == "upgrade-policies" && action == "update":
+		return b.updateUpgradePolicy(ctx, name, body)
 	case kind == "upgrade-policies" && action == "delete":
 		return b.deleteUpgradePolicy(ctx, name)
 	case kind == "preinstall-applications" && action == "update":
@@ -156,12 +158,9 @@ func (b KubeBackend) Action(ctx context.Context, kind, namespace, name, action s
 				return nil, ErrConflict
 			}
 			templateName, _ := input.Spec["templateName"].(string)
-			template, err := b.object(ctx, "system-templates", "", templateName)
+			_, err := b.object(ctx, "system-templates", "", templateName)
 			if err != nil {
 				return nil, err
-			}
-			if template.Spec["initMode"] == "cloudInit" {
-				return nil, ErrConflict
 			}
 		}
 		if kind == "preinstall-applications" {
@@ -317,6 +316,34 @@ func (b KubeBackend) createUpgradePolicy(ctx context.Context, body json.RawMessa
 		return nil, err
 	}
 	return created, nil
+}
+
+func (b KubeBackend) updateUpgradePolicy(ctx context.Context, name string, body json.RawMessage) (json.RawMessage, error) {
+	var input struct {
+		Metadata struct {
+			ResourceVersion string `json:"resourceVersion"`
+		} `json:"metadata"`
+		Spec struct {
+			VersionName string `json:"versionName"`
+			Enabled     bool   `json:"enabled"`
+			Order       int32  `json:"order"`
+			Shell       string `json:"shell"`
+		} `json:"spec"`
+	}
+	if json.Unmarshal(body, &input) != nil || !validName(name) || input.Metadata.ResourceVersion == "" || strings.TrimSpace(input.Spec.Shell) == "" {
+		return nil, ErrConflict
+	}
+	current, err := b.object(ctx, "upgrade-policies", "", name)
+	if err != nil {
+		return nil, err
+	}
+	if current.Metadata.ResourceVersion != input.Metadata.ResourceVersion || current.Spec["versionName"] != input.Spec.VersionName {
+		return nil, ErrConflict
+	}
+	current.Spec["enabled"] = input.Spec.Enabled
+	current.Spec["order"] = input.Spec.Order
+	current.Spec["shell"] = input.Spec.Shell
+	return b.update(ctx, "upgrade-policies", "", name, current)
 }
 
 func (b KubeBackend) deleteUpgradePolicy(ctx context.Context, name string) (json.RawMessage, error) {
@@ -616,7 +643,13 @@ func (b KubeBackend) createExecution(ctx context.Context, ns, name, kind string,
 			return nil, err
 		}
 		if target.Spec["initMode"] == "cloudInit" {
-			return nil, ErrConflict
+			sourceTemplate, err := b.object(ctx, "system-templates", "", source)
+			if err != nil {
+				return nil, err
+			}
+			if sourceTemplate.Spec["initMode"] != "cloudInit" {
+				return nil, ErrConflict
+			}
 		}
 		names, _ := version.Spec["policies"].([]any)
 		targetHash, _ := target.Spec["hash"].(string)
