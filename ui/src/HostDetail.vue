@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 
 const props = defineProps({ host: { type: Object, required: true }, versions: { type: Array, required: true }, sshHost: { type: String, default: '' }, loading: Boolean })
-const emit = defineEmits(['back', 'refresh', 'preinstall', 'upgrade', 'terminal', 'add-key', 'add-jump-key'])
+const emit = defineEmits(['refresh', 'preinstall', 'upgrade', 'terminal', 'add-key', 'add-jump-key'])
 const upgradeTarget = ref('')
 const publicKey = ref('')
 const jumpKey = ref('')
@@ -38,7 +38,6 @@ function addJumpKey() {
   <div class="host-detail-page">
     <section class="host-heading">
       <div class="host-heading-main">
-        <button class="host-back" type="button" @click="emit('back')">← 返回主机列表</button>
         <div class="host-identity"><h1>{{ name(host) }}</h1><span class="status">{{ display(host.status?.phase) }}</span></div>
         <p>{{ host.metadata?.namespace || '默认命名空间' }} <span v-if="host.status?.message">· {{ host.status.message }}</span></p>
       </div>
@@ -94,7 +93,7 @@ cat ~/.ssh/csm-218.pub</pre>
 
 <style scoped>
 .host-detail-page{width:100%;margin-bottom:24px}.host-detail-page button,.host-detail-page select{min-height:44px}.host-heading{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;padding:8px 0 24px;border-bottom:1px solid var(--color-border-2,#e5e6eb)}
-.host-back{padding:0;border:0;background:transparent;color:rgb(var(--primary-6,22,93,255));text-align:left}.host-back:hover{text-decoration:underline}.host-identity{display:flex;align-items:center;flex-wrap:wrap;gap:12px}.host-identity h1{margin:0;overflow-wrap:anywhere}.host-heading p{margin:8px 0 0;color:var(--color-text-2,#4e5969);overflow-wrap:anywhere}.host-heading-actions{display:flex;gap:8px;flex-wrap:wrap}
+.host-identity{display:flex;align-items:center;flex-wrap:wrap;gap:12px}.host-identity h1{margin:0;overflow-wrap:anywhere}.host-heading p{margin:8px 0 0;color:var(--color-text-2,#4e5969);overflow-wrap:anywhere}.host-heading-actions{display:flex;gap:8px;flex-wrap:wrap}
 .host-section{min-width:0;margin-top:22px;padding:20px;border:1px solid var(--color-border-2,#e5e6eb);background:var(--color-bg-2,#fff)}.host-section h2{margin-bottom:18px}.host-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.host-metrics>div{min-width:0;padding:16px;background:var(--color-fill-2,#f2f3f5)}.host-metrics span{display:block;color:var(--color-text-2,#4e5969)}.host-metrics strong{display:block;margin-top:8px;font-size:22px;overflow-wrap:anywhere}.host-metrics small{font-size:13px;font-weight:400}.host-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 24px;margin:16px 0 0}.host-facts>div{display:grid;grid-template-columns:110px minmax(0,1fr);gap:12px;padding:12px 0;border-bottom:1px solid var(--color-border-2,#e5e6eb)}.host-facts dt{color:var(--color-text-2,#4e5969)}.host-facts dd{min-width:0;margin:0;overflow-wrap:anywhere}
 .host-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.host-command{margin:16px 0;padding:12px;background:var(--color-fill-2,#f2f3f5);white-space:pre-wrap;overflow-wrap:anywhere}.host-key-form{margin-top:20px}.host-key-form button{margin-top:12px}.host-section-note{color:var(--color-text-2,#4e5969)}.host-upgrade{display:flex;align-items:end;gap:12px;margin-top:24px}.host-upgrade label{flex:1;min-width:0}.host-upgrade button{flex:none}
 @media(max-width:800px){.host-columns{grid-template-columns:1fr}.host-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}

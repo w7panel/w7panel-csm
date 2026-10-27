@@ -95,17 +95,13 @@ const appDrawerOpen = ref(false)
 const appSaving = ref(false)
 const appError = ref('')
 const terminalOpen = ref(false)
-let terminalPageFromDetail = false
 function openTerminal() {
   if (window.matchMedia('(max-width: 600px)').matches) {
-    terminalPageFromDetail = true
     router.push({ name: 'terminal', params: { name: hostRouteName.value } })
   } else terminalOpen.value = true
 }
 function closeTerminal() {
-  if (!terminalPage.value) { terminalOpen.value = false; return }
-  if (terminalPageFromDetail) router.back()
-  else router.replace({ name: 'host', params: { name: hostRouteName.value } })
+  terminalOpen.value = false
 }
 const title = computed(() => route.name === 'apps' ? '初始化配置' : section.value === 'purchase' ? '购买' : tabs.find(([id]) => id === section.value)?.[1] || '主机')
 const resource = { hosts: 'csms', templates: 'system-templates', preinstall: 'preinstall-executions', upgrade: 'upgrade-executions', orders: 'orders', disks: 'data-disks', apps: 'preinstall-applications', versions: 'upgrade-versions' }
@@ -271,7 +267,6 @@ function openHost(row) {
 function syncRoute() {
   notice.value = ''; payment.value = null
   const name = hostRouteName.value
-  if (!terminalPage.value) terminalPageFromDetail = false
   terminalOpen.value = false
   if (name) { if (nameOf(selected.value) !== name) { selected.value = null; loadHost(name) } }
   else selected.value = null
@@ -361,8 +356,8 @@ onUnmounted(() => { if (isMicroApp) window.$wujie?.bus?.$off?.('routeChange', on
       </a-menu>
     </a-drawer>
     <main>
-      <header class="page-header">
-        <div class="page-heading"><a-breadcrumb class="breadcrumb"><a-breadcrumb-item>资源管理</a-breadcrumb-item><a-breadcrumb-item v-if="hostRouteName"><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">主机</a></a-breadcrumb-item><a-breadcrumb-item>{{ hostRouteName || title }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb><h1>{{ hostRouteName || title }}</h1></div>
+      <header class="page-header" :class="{ 'page-header--detail': hostRouteName }">
+        <div class="page-heading"><a-breadcrumb v-if="hostRouteName" class="breadcrumb"><a-breadcrumb-item><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">主机</a></a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage"><a :href="router.resolve({ name: 'host', params: { name: hostRouteName } }).href" @click.prevent="router.push({ name: 'host', params: { name: hostRouteName } })">{{ hostRouteName }}</a></a-breadcrumb-item><a-breadcrumb-item v-else>{{ hostRouteName }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb><h1 v-if="!hostRouteName">{{ title }}</h1></div>
         <div v-if="!hostRouteName && loggedIn" class="page-actions-row"><a-button v-if="section === 'hosts'" type="primary" @click="go('purchase')">＋ 购买资源</a-button><a-button @click="load">刷新</a-button></div>
       </header>
       <p v-if="error" class="alert" role="alert">{{ error }}</p><p v-if="notice" class="notice" role="status">{{ notice }} <a v-if="payment?.ticket" :href="`https://ip.w7.cc/pay/${encodeURIComponent(payment.ticket)}?header=false&footer=false`" target="_blank" rel="noopener noreferrer">前往 W7 云支付 ↗</a></p>
@@ -417,7 +412,7 @@ onUnmounted(() => { if (isMicroApp) window.$wujie?.bus?.$off?.('routeChange', on
       <template v-if="section === 'templates'">
         <div class="page-tabs" role="tablist" aria-label="系统模板管理"><button type="button" role="tab" :aria-selected="templateTab === 'templates'" :class="{ active: templateTab === 'templates' }" @click="go('templates')">系统模板</button><button type="button" role="tab" :aria-selected="templateTab === 'apps'" :class="{ active: templateTab === 'apps' }" @click="go('apps')">初始化配置</button></div>
         <SystemTemplates v-if="templateTab === 'templates'" :rows="rows" :loading="loading" @saved="load" @navigate="go" />
-        <section v-else class="panel form-panel"><div class="panel-head"><h2>初始化配置</h2><button class="primary" @click="openAppDrawer">＋ 新建初始化配置</button></div><div class="table-wrap app-config-table"><table><thead><tr><th>名称</th><th>执行顺序</th><th>类型</th><th>操作</th></tr></thead><tbody><tr v-for="row in appRows" :key="nameOf(row)"><td>{{ nameOf(row) }}</td><td>{{ row.spec?.order }}</td><td>{{ row.spec?.cloudConfig || row.spec?.hasCloudConfig ? 'cloud-init' : '旧版 Shell' }}</td><td class="actions"><button v-if="row.spec?.cloudConfig || row.spec?.shell" class="text" @click="editConfig(row)">编辑</button><button class="text danger" @click="remove(`/preinstall-applications/${encodeURIComponent(nameOf(row))}`)">删除</button></td></tr></tbody></table></div><div v-if="!appRows.length" class="empty">暂无初始化配置</div></section>
+        <section v-else class="panel form-panel"><div class="panel-head"><button class="primary" @click="openAppDrawer">＋ 新建初始化配置</button></div><div class="table-wrap app-config-table"><table><thead><tr><th>名称</th><th>执行顺序</th><th>类型</th><th>操作</th></tr></thead><tbody><tr v-for="row in appRows" :key="nameOf(row)"><td>{{ nameOf(row) }}</td><td>{{ row.spec?.order }}</td><td>{{ row.spec?.cloudConfig || row.spec?.hasCloudConfig ? 'cloud-init' : '旧版 Shell' }}</td><td class="actions"><button v-if="row.spec?.cloudConfig || row.spec?.shell" class="text" @click="editConfig(row)">编辑</button><button class="text danger" @click="remove(`/preinstall-applications/${encodeURIComponent(nameOf(row))}`)">删除</button></td></tr></tbody></table></div><div v-if="!appRows.length" class="empty">暂无初始化配置</div></section>
       </template>
       <a-drawer v-model:visible="appDrawerOpen" :title="draft.resourceVersion ? '编辑初始化配置' : '新建初始化配置'" width="min(560px, 100vw)" :footer="false" :unmount-on-close="true">
         <form @submit.prevent="saveConfig"><p v-if="appError" class="alert" role="alert">{{ appError }}</p><div class="grid"><label>名称<input v-model.trim="draft.name" required maxlength="63" placeholder="唯一名称" :readonly="!!draft.resourceVersion" /></label><label>合并顺序<input v-model.number="draft.order" type="number" required /></label><label v-if="draft.kind === 'shell'" class="script-field">Shell 脚本<textarea v-model="draft.shell" required rows="10" spellcheck="false" /></label><label v-else class="script-field">cloud-config YAML<textarea v-model="draft.cloudConfig" required rows="10" spellcheck="false" /></label></div><p v-if="draft.kind === 'cloud'" class="hint">以 #cloud-config 开头；同名字段以后项为准，列表按顺序追加，实际执行遵循 cloud-init 模块阶段。</p><div class="app-drawer-actions"><button type="button" class="light" @click="appDrawerOpen = false">取消</button><button class="primary" :disabled="appSaving">{{ appSaving ? '保存中…' : '保存配置' }}</button></div></form>
@@ -443,7 +438,7 @@ onUnmounted(() => { if (isMicroApp) window.$wujie?.bus?.$off?.('routeChange', on
         <div v-if="!loading && rows.length === 0" class="empty">暂无记录。</div>
         <div v-else class="table-wrap execution-table"><table><thead><tr><th>名称 / 订单号</th><th>状态</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td class="mono">{{ nameOf(row) }}<details v-if="row.status?.log"><summary>初始化日志</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">{{ row.status.log }}</pre></details></td><td><span class="status">{{ phaseOf(row) }}</span></td></tr></tbody></table></div>
       </section>
-      <HostDetail v-if="section === 'hosts' && hostRouteName && !terminalPage && selected" :host="selected" :versions="versions" :ssh-host="sshHost" :loading="hostLoading" @back="go('hosts')" @refresh="loadHost(hostRouteName)" @preinstall="run(`/csms/${encodeURIComponent(hostRouteName)}/preinstall`)" @upgrade="versionName => run(`/csms/${encodeURIComponent(hostRouteName)}/upgrade`, { versionName })" @terminal="openTerminal" @add-key="async (publicKey, done) => { if ((await run(`/csms/${encodeURIComponent(hostRouteName)}/ssh-keys`, { publicKey })) !== undefined) done() }" @add-jump-key="async (publicKey, done) => { if ((await run(`/csms/${encodeURIComponent(hostRouteName)}/jump-keys`, { publicKey })) !== undefined) done() }" />
+      <HostDetail v-if="section === 'hosts' && hostRouteName && !terminalPage && selected" :host="selected" :versions="versions" :ssh-host="sshHost" :loading="hostLoading" @refresh="loadHost(hostRouteName)" @preinstall="run(`/csms/${encodeURIComponent(hostRouteName)}/preinstall`)" @upgrade="versionName => run(`/csms/${encodeURIComponent(hostRouteName)}/upgrade`, { versionName })" @terminal="openTerminal" @add-key="async (publicKey, done) => { if ((await run(`/csms/${encodeURIComponent(hostRouteName)}/ssh-keys`, { publicKey })) !== undefined) done() }" @add-jump-key="async (publicKey, done) => { if ((await run(`/csms/${encodeURIComponent(hostRouteName)}/jump-keys`, { publicKey })) !== undefined) done() }" />
       <section v-else-if="section === 'hosts' && hostRouteName && !terminalPage && hostLoading" class="panel"><p class="hint">正在加载主机详情…</p></section>
       <section v-if="selected && section === 'disks'" class="panel detail"><div class="panel-head"><h2>{{ nameOf(selected) }}</h2><button class="text" @click="selected = null">关闭</button></div><dl><dt>容量</dt><dd>{{ selected.spec?.storageGi || 0 }} GiB</dd><dt>到期时间</dt><dd>{{ dateText(selected.spec?.expireTime) }}</dd><dt>PVC</dt><dd>{{ selected.status?.pvcName || '待创建' }}</dd><dt>挂载路径</dt><dd>{{ selected.spec?.attached ? selected.spec?.mountPath || '—' : '未挂载' }}</dd></dl><div class="actions" v-if="selected.spec?.paid"><template v-if="!selected.spec?.attached && selected.status?.phase === 'Available'"><label>目标主机<select v-model="mountTarget"><option value="">选择主机</option><option v-for="host in mountHosts.filter(host => host.spec?.paid)" :key="nameOf(host)" :value="nameOf(host)">{{ nameOf(host) }}</option></select></label><button class="light" :disabled="!mountTarget" @click="run(`/data-disks/${encodeURIComponent(nameOf(selected))}/mount`, { csmName: mountTarget })">挂载</button></template><button v-if="selected.spec?.attached" class="light" @click="unmountDisk(selected)">卸载</button></div></section>
       <TerminalModal v-if="hostRouteName" :visible="terminalOpen || terminalPage" :page="terminalPage" :name="hostRouteName" @close="closeTerminal" />
@@ -482,6 +477,7 @@ main { grid-column: 2; grid-row: 2; min-width: 0; padding: 24px; }
 .shell--micro { display: block; }
 .shell--micro main { min-height: 100vh; padding: 20px; }
 .page-header { display: flex; align-items: end; justify-content: space-between; gap: 16px; min-height: 58px; margin-bottom: 20px; }
+.page-header--detail { min-height: 0; margin-bottom: 0; }
 .page-heading { min-width: 0; }
 .page-header .breadcrumb { min-width: 0; overflow-wrap: anywhere; }
 .page-actions-row { display: flex; align-items: center; gap: 8px; margin-left: auto; padding-bottom: 2px; }
