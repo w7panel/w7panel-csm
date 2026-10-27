@@ -147,6 +147,7 @@ to the panel's HTTPS origin so its WebSocket terminal can connect.
 The host's `X-W7Panel-Token` header alone does not grant CSM access.
 In Wujie, CSM hides its own navigation and requests an OIDC code from the host's
 `getOidcCode` bus event. CSM exchanges that code through `/auth/login` for its
-own verified token; `microappProxy` supplies the host token on HTTP requests.
+own verified token; requests use the host's `props.url` proxy path and
+`X-W7Panel-Token` header.
 The host's `routeChange` event selects CSM pages. Standalone CSM keeps its
 browser redirect login and navigation.

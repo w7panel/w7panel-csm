@@ -4,11 +4,13 @@ const prefix = '/csm-api/v1'
 let refreshPromise
 
 export async function api(path, options = {}) {
-  const request = window.$wujie?.props?.microappProxy || fetch
+  const props = window.$wujie?.props
+  const url = (props?.url || '').replace(/\/$/, '') + prefix
+  const panelToken = props?.paneltoken || (props ? localStorage.getItem('panelToken') : null)
   async function send(token) {
-    const headers = { ...(token ? { 'Authorization-csm': `Bearer ${token}` } : {}), ...options.headers }
+    const headers = { ...(token ? { 'Authorization-csm': `Bearer ${token}` } : {}), ...(panelToken ? { 'X-W7Panel-Token': panelToken } : {}), ...options.headers }
     if (options.body) headers['Content-Type'] = 'application/json'
-    return request(prefix + path, { ...options, headers })
+    return fetch(url + path, { ...options, headers })
   }
   const token = localStorage.getItem('csm-token')
   let response = await send(token)
@@ -16,8 +18,8 @@ export async function api(path, options = {}) {
   if (response.status === 401 && refreshToken && path !== '/auth/refresh' && path !== '/auth/login') {
     let nextToken = localStorage.getItem('csm-token')
     if (nextToken === token) {
-      if (!refreshPromise) refreshPromise = request(prefix + '/auth/refresh', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      if (!refreshPromise) refreshPromise = fetch(url + '/auth/refresh', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...(panelToken ? { 'X-W7Panel-Token': panelToken } : {}) },
         body: JSON.stringify({ refresh_token: refreshToken }),
       }).then(async refreshed => {
         if (!refreshed.ok) {
