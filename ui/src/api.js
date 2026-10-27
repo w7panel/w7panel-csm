@@ -1,3 +1,5 @@
+import { loginInMicroapp } from './auth.js'
+
 const prefix = '/csm-api/v1'
 let refreshPromise
 
@@ -31,6 +33,14 @@ export async function api(path, options = {}) {
         return tokens.access_token
       }).finally(() => { refreshPromise = null })
       nextToken = await refreshPromise
+    }
+    if (nextToken) response = await send(nextToken)
+  }
+  if (response.status === 401 && window.__POWERED_BY_WUJIE__ && !path.startsWith('/auth/')) {
+    let nextToken = localStorage.getItem('csm-token')
+    if (!nextToken || nextToken === token) {
+      await loginInMicroapp()
+      nextToken = localStorage.getItem('csm-token')
     }
     if (nextToken) response = await send(nextToken)
   }

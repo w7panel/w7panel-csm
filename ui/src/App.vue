@@ -1,8 +1,8 @@
 <script setup>
-import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, items } from './api'
-import { finishLogin, startLogin } from './auth'
+import { finishLogin, loginInMicroapp, startLogin } from './auth'
 import SystemTemplates from './SystemTemplates.vue'
 import UpgradeVersions from './UpgradeVersions.vue'
 import HostDetail from './HostDetail.vue'
@@ -16,6 +16,7 @@ const tabs = [
 ]
 const route = useRoute()
 const router = useRouter()
+const isMicroApp = Boolean(window.__POWERED_BY_WUJIE__)
 const hostRouteName = computed(() => route.params.name || '')
 const terminalPage = computed(() => route.name === 'terminal')
 const hostLoading = ref(false)
@@ -23,7 +24,8 @@ const section = computed(() => route.meta.section || route.name || 'hosts')
 const templateTab = computed(() => route.name === 'apps' ? 'apps' : 'templates')
 const mobileMenuOpen = ref(false)
 const loading = ref(false)
-const loggedIn = ref(Boolean(localStorage.getItem('csm-token')))
+const loggedIn = ref(!isMicroApp && Boolean(localStorage.getItem('csm-token')))
+const loginPending = ref(false)
 const error = ref('')
 const notice = ref('')
 const rows = ref([])
@@ -108,7 +110,18 @@ function closeTerminal() {
 const title = computed(() => section.value === 'purchase' ? '购买' : tabs.find(([id]) => id === section.value)?.[1] || '主机')
 const resource = { hosts: 'csms', templates: 'system-templates', preinstall: 'preinstall-executions', upgrade: 'upgrade-executions', orders: 'orders', disks: 'data-disks', apps: 'preinstall-applications', versions: 'upgrade-versions' }
 
-async function login() { try { await startLogin() } catch (e) { error.value = e.message } }
+async function login() {
+  error.value = ''
+  loginPending.value = true
+  try {
+    if (!isMicroApp) { await startLogin(); return }
+    const config = await loginInMicroapp()
+    loggedIn.value = true
+    sshHost.value = config.sshHost || ''
+    await Promise.all([load(), hostRouteName.value ? loadHost(hostRouteName.value) : null])
+  } catch (e) { error.value = e.message }
+  finally { loginPending.value = false }
+}
 function go(id) { notice.value = ''; payment.value = null; selected.value = null; terminalOpen.value = false; mobileMenuOpen.value = false; router.push({ name: id }) }
 function orderForDisk(action, disk) {
   form.value = { kind: 'dataDisk', action, name: disk?.metadata?.name || '', templateName: '', cpu: 0, memoryGi: 0, storageGi: action === 'expand' ? Number(disk.spec?.storageGi || 0) + 10 : action === 'buy' ? 10 : 0, bandwidthMbps: 0, quantity: 1, unit: 'month' }
@@ -310,19 +323,31 @@ watch(() => form.value.kind, kind => {
     if (!form.value.bandwidthMbps) form.value.bandwidthMbps = 5
   }
 })
-onMounted(async () => { try { await router.isReady(); const redirect = await finishLogin(); if (redirect) { loggedIn.value = true; await router.replace(redirect) } const [config] = await Promise.all([api('/auth/config'), loggedIn.value ? load() : null, loggedIn.value && hostRouteName.value ? loadHost(hostRouteName.value) : null]); sshHost.value = config.sshHost || '' } catch (e) { error.value = e.message } })
+function onHostRoute(path, data) { if (!data?.fromSubPanel) router.push(path || '/hosts') }
+onMounted(async () => {
+  if (isMicroApp) window.$wujie?.bus?.$on?.('routeChange', onHostRoute)
+  try {
+    await router.isReady()
+    if (isMicroApp) { await login(); return }
+    const redirect = await finishLogin()
+    if (redirect) { loggedIn.value = true; await router.replace(redirect) }
+    const [config] = await Promise.all([api('/auth/config'), loggedIn.value ? load() : null, loggedIn.value && hostRouteName.value ? loadHost(hostRouteName.value) : null])
+    sshHost.value = config.sshHost || ''
+  } catch (e) { error.value = e.message }
+})
+onUnmounted(() => { if (isMicroApp) window.$wujie?.bus?.$off?.('routeChange', onHostRoute) })
 </script>
 
 <template>
   <div class="shell">
-    <aside class="rail" aria-label="CSM 功能导航">
+    <aside v-if="!isMicroApp" class="rail" aria-label="CSM 功能导航">
       <div class="brand">CSM 管理</div>
       <a-menu class="app-menu" :selected-keys="[section === 'purchase' ? (form.kind === 'dataDisk' ? 'disks' : 'hosts') : section]" @menu-item-click="go">
         <a-menu-item v-for="[id, label] in tabs" :key="id">{{ label }}</a-menu-item>
       </a-menu>
     </aside>
-    <div class="mobile-bar"><button type="button" class="mobile-menu-trigger" aria-label="打开导航菜单" @click="mobileMenuOpen = true">☰</button><strong>CSM 管理</strong></div>
-    <a-drawer v-model:visible="mobileMenuOpen" title="CSM 管理" placement="left" width="min(280px, 88vw)" :footer="false" :unmount-on-close="true">
+    <div v-if="!isMicroApp" class="mobile-bar"><button type="button" class="mobile-menu-trigger" aria-label="打开导航菜单" @click="mobileMenuOpen = true">☰</button><strong>CSM 管理</strong></div>
+    <a-drawer v-if="!isMicroApp" v-model:visible="mobileMenuOpen" title="CSM 管理" placement="left" width="min(280px, 88vw)" :footer="false" :unmount-on-close="true">
       <a-menu class="app-menu" :selected-keys="[section === 'purchase' ? (form.kind === 'dataDisk' ? 'disks' : 'hosts') : section]" @menu-item-click="go">
         <a-menu-item v-for="[id, label] in tabs" :key="id">{{ label }}</a-menu-item>
       </a-menu>
@@ -334,7 +359,7 @@ onMounted(async () => { try { await router.isReady(); const redirect = await fin
         <div v-if="!hostRouteName && loggedIn" class="page-actions-row"><a-button v-if="section === 'hosts'" type="primary" @click="go('purchase')">＋ 购买资源</a-button><a-button @click="load">刷新</a-button></div>
       </header>
       <p v-if="error" class="alert" role="alert">{{ error }}</p><p v-if="notice" class="notice" role="status">{{ notice }} <a v-if="payment?.ticket" :href="`https://ip.w7.cc/pay/${encodeURIComponent(payment.ticket)}?header=false&footer=false`" target="_blank" rel="noopener noreferrer">前往 W7 云支付 ↗</a></p>
-      <section v-if="!loggedIn" class="panel"><h2>登录 CSM</h2><p class="hint">使用 W7Panel 账户授权后管理云主机。</p><button class="primary" @click="login">登录</button></section>
+      <section v-if="!loggedIn" class="panel"><h2>{{ isMicroApp ? '连接 CSM' : '登录 CSM' }}</h2><p class="hint">{{ isMicroApp ? '正在通过宿主授权访问 CSM。' : '使用 W7Panel 账户授权后管理云主机。' }}</p><button v-if="!loginPending" class="primary" @click="login">{{ isMicroApp ? '重试授权' : '登录' }}</button></section>
       <template v-else><section v-if="section === 'purchase'" class="panel purchase-page">
         <p class="hint">按资源规格和购买时长配置订单，支付确认后生效。</p>
         <div class="purchase-meta">

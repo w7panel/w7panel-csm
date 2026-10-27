@@ -1,4 +1,4 @@
-import { api } from './api'
+import { api } from './api.js'
 
 const stateKey = 'csm-oauth-state'
 const verifierKey = 'csm-oauth-verifier'
@@ -66,6 +66,41 @@ async function challenge(verifier) {
   const bytes = new TextEncoder().encode(verifier)
   return base64url(crypto.subtle?.digest ? new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)) : sha256(bytes))
 }
+function saveTokens(result) {
+  if (!result.access_token) throw new Error('登录未返回访问令牌')
+  localStorage.setItem('csm-token', result.access_token)
+  if (result.refresh_token) localStorage.setItem('csm-refresh-token', result.refresh_token)
+}
+
+let microappLoginPromise
+async function requestMicroappToken() {
+  const bus = window.$wujie?.bus
+  if (!window.__POWERED_BY_WUJIE__ || !bus?.$emit) throw new Error('宿主授权服务不可用')
+  localStorage.removeItem('csm-token')
+  localStorage.removeItem('csm-refresh-token')
+  const config = await api('/auth/config')
+  const state = random(16)
+  const verifier = random(32)
+  const codeChallenge = await challenge(verifier)
+  const code = await new Promise((resolve, reject) => {
+    bus.$emit('getOidcCode', {
+      client_id: config.clientId,
+      redirect_uri: config.redirectUri,
+      scope: config.scope,
+      state,
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
+    }, value => value ? resolve(value) : reject(new Error('宿主授权失败')))
+  })
+  const result = await api('/auth/login', { method: 'POST', body: JSON.stringify({ code, code_verifier: verifier, redirect_uri: config.redirectUri }) })
+  saveTokens(result)
+  return config
+}
+export function loginInMicroapp() {
+  if (!microappLoginPromise) microappLoginPromise = requestMicroappToken().finally(() => { microappLoginPromise = null })
+  return microappLoginPromise
+}
+
 export async function startLogin() {
   const config = await api('/auth/config')
   const state = random(16)
@@ -92,9 +127,7 @@ export async function finishLogin() {
   if (!state || state !== query.get('state') || !verifier) throw new Error('登录状态无效，请重新登录')
   const config = await api('/auth/config')
   const result = await api('/auth/login', { method: 'POST', body: JSON.stringify({ code: query.get('code'), code_verifier: verifier, redirect_uri: config.redirect_uri || config.redirectUri }) })
-  if (!result.access_token) throw new Error('登录未返回访问令牌')
-  localStorage.setItem('csm-token', result.access_token)
-  if (result.refresh_token) localStorage.setItem('csm-refresh-token', result.refresh_token)
+  saveTokens(result)
   sessionStorage.removeItem(stateKey)
   sessionStorage.removeItem(verifierKey)
   const redirect = sessionStorage.getItem(redirectKey) || '#/hosts'
