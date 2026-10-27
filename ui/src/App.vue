@@ -356,8 +356,8 @@ onUnmounted(() => { if (isMicroApp) window.$wujie?.bus?.$off?.('routeChange', on
       </a-menu>
     </a-drawer>
     <main>
-      <header class="page-header" :class="{ 'page-header--detail': hostRouteName }">
-        <div class="page-heading"><a-breadcrumb v-if="hostRouteName" class="breadcrumb"><a-breadcrumb-item><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">主机</a></a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage"><a :href="router.resolve({ name: 'host', params: { name: hostRouteName } }).href" @click.prevent="router.push({ name: 'host', params: { name: hostRouteName } })">{{ hostRouteName }}</a></a-breadcrumb-item><a-breadcrumb-item v-else>{{ hostRouteName }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb><h1 v-if="!hostRouteName">{{ title }}</h1></div>
+      <header class="page-header">
+        <a-breadcrumb class="breadcrumb"><a-breadcrumb-item><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">资源管理</a></a-breadcrumb-item><a-breadcrumb-item v-if="hostRouteName"><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">主机</a></a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage"><a :href="router.resolve({ name: 'host', params: { name: hostRouteName } }).href" @click.prevent="router.push({ name: 'host', params: { name: hostRouteName } })">{{ hostRouteName }}</a></a-breadcrumb-item><a-breadcrumb-item v-else>{{ hostRouteName || title }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb>
         <div v-if="!hostRouteName && loggedIn" class="page-actions-row"><a-button v-if="section === 'hosts'" type="primary" @click="go('purchase')">＋ 购买资源</a-button><a-button @click="load">刷新</a-button></div>
       </header>
       <p v-if="error" class="alert" role="alert">{{ error }}</p><p v-if="notice" class="notice" role="status">{{ notice }} <a v-if="payment?.ticket" :href="`https://ip.w7.cc/pay/${encodeURIComponent(payment.ticket)}?header=false&footer=false`" target="_blank" rel="noopener noreferrer">前往 W7 云支付 ↗</a></p>
@@ -476,9 +476,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 main { grid-column: 2; grid-row: 2; min-width: 0; padding: 24px; }
 .shell--micro { display: block; background: #fff; }
 .shell--micro main { min-height: 100vh; padding: 20px; }
-.page-header { display: flex; align-items: end; justify-content: space-between; gap: 16px; min-height: 58px; margin-bottom: 20px; }
-.page-header--detail { min-height: 0; margin-bottom: 0; }
-.page-heading { min-width: 0; }
+.page-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .page-header .breadcrumb { min-width: 0; overflow-wrap: anywhere; }
 .page-actions-row { display: flex; align-items: center; gap: 8px; margin-left: auto; padding-bottom: 2px; }
 h1 { margin: 6px 0 0; color: var(--color-text-1, #1d2129); font-size: 20px; font-weight: 600; line-height: 30px; }
