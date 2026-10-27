@@ -6,6 +6,7 @@ RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends openssh-server cloud-init \
     && systemctl enable ssh.service \
     && printf 'datasource_list: [ NoCloud ]\n' > /etc/cloud/cloud.cfg.d/99-csm-datasource.cfg \
+    && printf 'network: {config: disabled}\n' > /etc/cloud/cloud.cfg.d/99-csm-network.cfg \
     && rm -rf /var/lib/apt/lists/* /etc/ssh/ssh_host_*
 
 EXPOSE 22
