@@ -1,0 +1,14 @@
+apiVersion: csm.w7.cc/v1alpha1
+kind: PreinstallApplication
+metadata:
+  name: csm-cloudinit-smoke
+spec:
+  enabled: true
+  order: 0
+  cloudConfig: |
+    #cloud-config
+    write_files:
+      - path: /var/tmp/csm-cloudinit-smoke
+        permissions: '0644'
+        content: |
+          CSM cloud-init OK
