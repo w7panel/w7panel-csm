@@ -86,7 +86,7 @@ helm-lint:
 	helm lint $(CHART_DIR)
 
 packageHelm:
-	helm package $(CHART_DIR)
+	helm package $(CHART_DIR) --version=$(KO_IMAGE_TAG) --app-version=$(KO_IMAGE_TAG)
 
 deployHelm:
 	helm upgrade --install w7panel-csm $(CHART_DIR) --set image.tag=$(KO_IMAGE_TAG) --namespace $(NAMESPACE) --create-namespace $(HELM_ARGS)
@@ -102,6 +102,6 @@ loginZpk:
 publishZpk: packageHelm build-ui
 	cd ui/dist && rm -f dist.zip && zip -qr dist.zip .
 	zpk use --name=w7panel-csm
-	zpk attach add --path=$(CHART_PACKAGE) --type=helm
+	zpk attach add --path=./w7panel-csm-$(KO_IMAGE_TAG).tgz --type=helm
 	zpk attach add --path=./ui/dist/dist.zip --type=frontend
 	zpk push
