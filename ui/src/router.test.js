@@ -10,6 +10,8 @@ test('CSM routes keep navigation and host names', async () => {
   await router.push({ name: 'host', params: { name: 'test host' } })
   assert.equal(router.currentRoute.value.path, '/hosts/test%20host')
   assert.equal(router.currentRoute.value.params.name, 'test host')
+  await router.push({ name: 'host', params: { name: 'test host' }, query: { namespace: 'csm-bob' } })
+  assert.equal(router.currentRoute.value.query.namespace, 'csm-bob')
   await router.push({ name: 'terminal', params: { name: 'test host' } })
   assert.equal(router.currentRoute.value.meta.section, 'hosts')
   await router.push('/apps')

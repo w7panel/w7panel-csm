@@ -271,6 +271,9 @@ func (s *Server) list(kind string) http.HandlerFunc {
 		if kind == "system-templates" {
 			ns = ""
 		}
+		if kind == "csms" && identity(r.Context()).Founder && r.URL.Query().Get("namespace") == "" {
+			ns = ""
+		}
 		data, err := s.Backend.List(r.Context(), kind, ns)
 		if err == nil && kind == "preinstall-applications" && !identity(r.Context()).Founder {
 			data, err = redactInitializationConfigs(data)

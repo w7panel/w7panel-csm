@@ -8,6 +8,7 @@ const editor = ref(null)
 const applications = ref([])
 const saving = ref(false)
 const error = ref('')
+defineExpose({ openCreate: () => open() })
 
 async function open(row) {
   error.value = ''
@@ -44,7 +45,7 @@ async function save() {
 
 <template>
   <section class="panel template-page">
-    <div class="panel-head"><button class="primary" @click="open()">＋ 新建系统模板</button><span>{{ loading ? '正在加载…' : `${rows.length} 个模板` }}</span></div>
+    <div class="panel-head"><span>{{ loading ? '正在加载…' : `${rows.length} 个模板` }}</span></div>
     <p class="hint">新模板使用 cloud-init 首次启动配置。修改镜像会自动更新使用该模板的云主机。</p>
     <div v-if="!loading && !rows.length" class="empty">暂无系统模板</div>
     <div v-for="row in rows" :key="row.metadata.name" class="template-row">

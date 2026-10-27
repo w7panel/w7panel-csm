@@ -4,7 +4,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 
-const props = defineProps({ visible: Boolean, page: Boolean, name: { type: String, required: true } })
+const props = defineProps({ visible: Boolean, page: Boolean, name: { type: String, required: true }, namespace: { type: String, default: '' } })
 const emit = defineEmits(['close'])
 const element = ref(null)
 const message = ref('')
@@ -44,6 +44,7 @@ function connect() {
   if (!token) { message.value = '请先登录后打开终端'; return }
   const base = window.$wujie?.props?.url || window.location.origin
   const url = new URL(`/csm-api/v1/csms/${encodeURIComponent(props.name)}/terminal`, base)
+  if (props.namespace) url.searchParams.set('namespace', props.namespace)
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   socket = new WebSocket(url, ['v4.channel.k8s.io', `bearer.${token}`])
   socket.binaryType = 'arraybuffer'
@@ -56,7 +57,7 @@ function connect() {
   socket.onerror = () => { message.value = '终端连接失败' }
   socket.onclose = () => { message.value ||= '终端连接已断开' }
 }
-watch(() => [props.visible, props.name, props.page], async ([visible]) => {
+watch(() => [props.visible, props.name, props.namespace, props.page], async ([visible]) => {
   dispose()
   if (!visible) return
   await nextTick()

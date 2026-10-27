@@ -39,7 +39,7 @@ func (b KubeBackend) path(kind, namespace, name string) (string, error) {
 		return "", ErrNotFound
 	}
 	path := strings.TrimRight(b.BaseURL, "/") + "/apis/csm.w7.cc/v1alpha1/"
-	if kind == "csms" || kind == "data-disks" {
+	if (kind == "csms" || kind == "data-disks") && !(kind == "csms" && namespace == "" && name == "") {
 		if !validName(namespace) {
 			return "", ErrForbidden
 		}

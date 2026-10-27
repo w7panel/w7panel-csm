@@ -184,6 +184,27 @@ func TestTenantAndFounderGuards(t *testing.T) {
 		t.Fatalf("unauthorized write: %d, %d", w.Code, backend.actions)
 	}
 }
+func TestFounderListsAllHostsButTenantStaysNamespaced(t *testing.T) {
+	backend := &backendStub{}
+	server := NewServer(func(_ context.Context, token string) (Identity, error) {
+		return Identity{Namespace: "csm-alice", Founder: token == "founder"}, nil
+	}, backend, order.Service{Gateway: gatewayStub{}, Store: storeStub{}}, "")
+	for _, tc := range []struct{ token, path, namespace string }{
+		{"tenant", Prefix + "/csms?namespace=csm-bob", "csm-alice"},
+		{"founder", Prefix + "/csms", ""},
+		{"founder", Prefix + "/csms?namespace=csm-bob", "csm-bob"},
+		{"tenant", Prefix + "/csms/host?namespace=csm-bob", "csm-alice"},
+		{"founder", Prefix + "/csms/host?namespace=csm-bob", "csm-bob"},
+	} {
+		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		req.Header.Set("Authorization-csm", "Bearer "+tc.token)
+		w := httptest.NewRecorder()
+		server.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusOK || backend.namespace != tc.namespace {
+			t.Fatalf("%s %s: code=%d namespace=%q", tc.token, tc.path, w.Code, backend.namespace)
+		}
+	}
+}
 func TestStaticUIAndHealth(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("CSM UI"), 0600); err != nil {

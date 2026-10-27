@@ -42,6 +42,17 @@ func TestMountSetsDefaultPath(t *testing.T) {
 	}
 }
 
+func TestHostListPathAllowsAllNamespacesButHostGetRequiresNamespace(t *testing.T) {
+	b := KubeBackend{BaseURL: "https://kube.example"}
+	path, err := b.path("csms", "", "")
+	if err != nil || path != "https://kube.example/apis/csm.w7.cc/v1alpha1/csms" {
+		t.Fatalf("all host path: %q %v", path, err)
+	}
+	if _, err := b.path("csms", "", "host"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("unnamespaced host get accepted: %v", err)
+	}
+}
+
 func TestAttachKeyUpdatesHost(t *testing.T) {
 	const key = "ssh-ed25519 YWJj local"
 	var saved struct {
