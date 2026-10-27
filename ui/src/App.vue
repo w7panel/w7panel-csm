@@ -107,7 +107,7 @@ function closeTerminal() {
   if (terminalPageFromDetail) router.back()
   else router.replace({ name: 'host', params: { name: hostRouteName.value } })
 }
-const title = computed(() => section.value === 'purchase' ? '购买' : tabs.find(([id]) => id === section.value)?.[1] || '主机')
+const title = computed(() => route.name === 'apps' ? '初始化配置' : section.value === 'purchase' ? '购买' : tabs.find(([id]) => id === section.value)?.[1] || '主机')
 const resource = { hosts: 'csms', templates: 'system-templates', preinstall: 'preinstall-executions', upgrade: 'upgrade-executions', orders: 'orders', disks: 'data-disks', apps: 'preinstall-applications', versions: 'upgrade-versions' }
 
 async function login() {
@@ -347,14 +347,14 @@ onUnmounted(() => { if (isMicroApp) window.$wujie?.bus?.$off?.('routeChange', on
 </script>
 
 <template>
-  <div class="shell">
+  <div class="shell" :class="{ 'shell--micro': isMicroApp }">
+    <div v-if="!isMicroApp" class="topbar"><div class="topbar-brand"><button type="button" class="mobile-menu-trigger" aria-label="打开导航菜单" @click="mobileMenuOpen = true">☰</button><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>CSM</span><small>云资源管理</small></div><span class="topbar-context">资源控制台</span></div>
     <aside v-if="!isMicroApp" class="rail" aria-label="CSM 功能导航">
-      <div class="brand">CSM 管理</div>
+      <div class="brand">功能导航</div>
       <a-menu class="app-menu" :selected-keys="[section === 'purchase' ? (form.kind === 'dataDisk' ? 'disks' : 'hosts') : section]" @menu-item-click="go">
         <a-menu-item v-for="[id, label] in tabs" :key="id">{{ label }}</a-menu-item>
       </a-menu>
     </aside>
-    <div v-if="!isMicroApp" class="mobile-bar"><button type="button" class="mobile-menu-trigger" aria-label="打开导航菜单" @click="mobileMenuOpen = true">☰</button><strong>CSM 管理</strong></div>
     <a-drawer v-if="!isMicroApp" v-model:visible="mobileMenuOpen" title="CSM 管理" placement="left" width="min(280px, 88vw)" :footer="false" :unmount-on-close="true">
       <a-menu class="app-menu" :selected-keys="[section === 'purchase' ? (form.kind === 'dataDisk' ? 'disks' : 'hosts') : section]" @menu-item-click="go">
         <a-menu-item v-for="[id, label] in tabs" :key="id">{{ label }}</a-menu-item>
@@ -362,8 +362,7 @@ onUnmounted(() => { if (isMicroApp) window.$wujie?.bus?.$off?.('routeChange', on
     </a-drawer>
     <main>
       <header class="page-header">
-        <a-breadcrumb v-if="hostRouteName" class="breadcrumb"><a-breadcrumb-item><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">主机</a></a-breadcrumb-item><a-breadcrumb-item>{{ hostRouteName }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb>
-        <h1 v-else>{{ title }}</h1>
+        <div class="page-heading"><a-breadcrumb class="breadcrumb"><a-breadcrumb-item>资源管理</a-breadcrumb-item><a-breadcrumb-item v-if="hostRouteName"><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">主机</a></a-breadcrumb-item><a-breadcrumb-item>{{ hostRouteName || title }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb><h1>{{ hostRouteName || title }}</h1></div>
         <div v-if="!hostRouteName && loggedIn" class="page-actions-row"><a-button v-if="section === 'hosts'" type="primary" @click="go('purchase')">＋ 购买资源</a-button><a-button @click="load">刷新</a-button></div>
       </header>
       <p v-if="error" class="alert" role="alert">{{ error }}</p><p v-if="notice" class="notice" role="status">{{ notice }} <a v-if="payment?.ticket" :href="`https://ip.w7.cc/pay/${encodeURIComponent(payment.ticket)}?header=false&footer=false`" target="_blank" rel="noopener noreferrer">前往 W7 云支付 ↗</a></p>
@@ -455,9 +454,9 @@ onUnmounted(() => { if (isMicroApp) window.$wujie?.bus?.$off?.('routeChange', on
 
 <style>
 :root {
-  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
   color: var(--color-text-1, #1d2129);
-  background: var(--color-bg-2, #fff);
+  background: var(--color-fill-2, #f2f3f5);
   font-size: 14px;
 }
 * { box-sizing: border-box; }
@@ -465,18 +464,30 @@ body { margin: 0; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px solid rgb(var(--primary-6, 22, 93, 255)); outline-offset: 2px; }
-.shell { display: flex; min-height: 100vh; }
-.rail { flex: 0 0 208px; min-height: 100vh; background: var(--color-bg-2, #fff); border-right: 1px solid var(--color-border-2, #e5e6eb); }
-.brand { display: flex; align-items: center; height: 56px; padding: 0 20px; border-bottom: 1px solid var(--color-border-2, #e5e6eb); color: var(--color-text-1, #1d2129); font-size: 16px; font-weight: 600; }
-.app-menu { padding: 8px; background: transparent; }
-.mobile-bar { display: none; }
-main { flex: 1; min-width: 0; min-height: 100vh; padding: 20px; }
-.page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; margin-bottom: 16px; }
+.shell { display: grid; grid-template-columns: 208px minmax(0, 1fr); grid-template-rows: 60px minmax(calc(100vh - 60px), auto); min-height: 100vh; background: var(--color-fill-2, #f2f3f5); }
+.topbar { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; min-width: 0; padding: 0 24px; border-bottom: 1px solid var(--color-border-2, #e5e6eb); background: var(--color-bg-2, #fff); }
+.topbar-brand { display: flex; align-items: center; gap: 10px; color: var(--color-text-1, #1d2129); font-family: 'Segoe UI', 'PingFang SC', sans-serif; font-size: 19px; font-weight: 700; letter-spacing: .02em; }
+.topbar-brand small { margin-left: 2px; padding-left: 12px; border-left: 1px solid var(--color-border-2, #e5e6eb); color: var(--color-text-3, #86909c); font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; font-size: 12px; font-weight: 400; letter-spacing: 0; }
+.brand-mark { display: grid; align-content: center; gap: 3px; width: 29px; height: 29px; padding: 6px; border-radius: 4px; background: rgb(var(--primary-6, 22, 93, 255)); }
+.brand-mark i { display: block; height: 3px; border-radius: 2px; background: #fff; }
+.brand-mark i:nth-child(2) { width: 75%; }
+.topbar-context { color: var(--color-text-3, #86909c); font-size: 12px; }
+.rail { grid-column: 1; grid-row: 2; min-width: 0; background: var(--color-bg-2, #fff); border-right: 1px solid var(--color-border-2, #e5e6eb); }
+.brand { padding: 22px 20px 9px; color: var(--color-text-3, #86909c); font-size: 12px; }
+.app-menu { padding: 4px 8px; background: transparent; }
+.app-menu .arco-menu-item { height: 40px; margin: 2px 0; border-radius: 4px; }
+.app-menu .arco-menu-item.arco-menu-selected { background: var(--color-primary-light-1, #e8f3ff); }
+.mobile-menu-trigger { display: none; }
+main { grid-column: 2; grid-row: 2; min-width: 0; padding: 24px; }
+.shell--micro { display: block; }
+.shell--micro main { min-height: 100vh; padding: 20px; }
+.page-header { display: flex; align-items: end; justify-content: space-between; gap: 16px; min-height: 58px; margin-bottom: 20px; }
+.page-heading { min-width: 0; }
 .page-header .breadcrumb { min-width: 0; overflow-wrap: anywhere; }
-.page-actions-row { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-h1 { margin: 0; color: var(--color-text-1, #1d2129); font-size: 20px; font-weight: 600; line-height: 32px; }
+.page-actions-row { display: flex; align-items: center; gap: 8px; margin-left: auto; padding-bottom: 2px; }
+h1 { margin: 6px 0 0; color: var(--color-text-1, #1d2129); font-size: 20px; font-weight: 600; line-height: 30px; }
 h2 { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
-.panel { min-width: 0; margin-bottom: 20px; padding: 20px; background: var(--color-bg-2, #fff); }
+.panel { min-width: 0; margin-bottom: 20px; padding: 20px; border: 1px solid var(--color-border-2, #e5e6eb); border-radius: 4px; background: var(--color-bg-2, #fff); }
 .panel-head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 12px; color: var(--color-text-3, #86909c); font-size: 13px; }
 .light, .primary { min-height: 32px; padding: 0 15px; border: 1px solid var(--color-border-2, #e5e6eb); border-radius: 2px; background: var(--color-fill-2, #f2f3f5); color: var(--color-text-1, #1d2129); }
 .light:hover { background: var(--color-fill-3, #e5e6eb); }
@@ -527,15 +538,17 @@ textarea { min-height: 90px; resize: vertical; }
 .upgrade-form { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
 .upgrade-form label { min-width: 220px; }
 @media (max-width: 720px) {
-  .rail { flex-basis: 156px; }
-  .brand { padding: 0 16px; }
+  .shell { grid-template-columns: 176px minmax(0, 1fr); }
+  .brand { padding: 22px 16px 9px; }
 }
 @media (max-width: 600px) {
   .shell { display: block; }
   .rail { display: none; }
-  .mobile-bar { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 16px; border-bottom: 1px solid var(--color-border-2, #e5e6eb); background: var(--color-bg-2, #fff); }
-  .mobile-menu-trigger { width: 36px; height: 36px; padding: 0; border: 0; background: transparent; color: rgb(var(--primary-6, 22, 93, 255)); font-size: 20px; }
-  main { min-height: calc(100vh - 48px); padding: 16px; }
+  .topbar { height: 60px; padding: 0 16px; }
+  .topbar-context { display: none; }
+  .mobile-menu-trigger { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; margin-left: -8px; padding: 0; border: 0; background: transparent; color: var(--color-text-1, #1d2129); font-size: 20px; }
+  main { min-height: calc(100vh - 60px); padding: 16px; }
+  .shell--micro main { min-height: 100vh; padding: 16px; }
   .panel { padding: 16px; }
   .grid { grid-template-columns: 1fr; }
   .page-actions-row > * { min-height: 44px; }
@@ -548,6 +561,7 @@ input[type='checkbox'] { width: auto; min-height: 0; padding: 0; accent-color: r
 .order-table table, .disk-table table { min-width: 900px; }
 .table-wrap th { padding: 10px 12px; border-bottom: 1px solid var(--color-border-2, #e5e6eb); background: var(--color-fill-2, #f2f3f5); color: var(--color-text-2, #4e5969); font-weight: 500; white-space: nowrap; }
 .table-wrap td { padding: 12px; border-bottom: 1px solid var(--color-border-2, #e5e6eb); vertical-align: middle; }
+.table-wrap tbody tr:hover { background: var(--color-fill-1, #f7f8fa); }
 .table-wrap td small { display: block; margin-top: 4px; color: var(--color-text-3, #86909c); }
 .table-wrap td.actions { display: table-cell; text-align: right; white-space: nowrap; }
 .table-wrap th:last-child { text-align: right; }
