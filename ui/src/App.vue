@@ -449,7 +449,7 @@ onUnmounted(() => { window.removeEventListener('message', onPaymentMessage); if 
     </a-drawer>
     <main>
       <header class="page-header">
-        <div class="page-heading"><a-breadcrumb class="breadcrumb"><a-breadcrumb-item><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">资源管理</a></a-breadcrumb-item><a-breadcrumb-item v-if="hostRouteName"><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">主机</a></a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage"><a :href="router.resolve({ name: 'host', params: { name: hostRouteName }, query: route.query }).href" @click.prevent="router.push({ name: 'host', params: { name: hostRouteName }, query: route.query })">{{ hostRouteName }}</a></a-breadcrumb-item><a-breadcrumb-item v-else>{{ hostRouteName || title }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb><h1 v-if="section !== 'purchase' && (!hostRouteName || terminalPage)">{{ terminalPage ? '终端' : title }}</h1></div>
+        <div class="page-heading"><a-breadcrumb class="breadcrumb"><a-breadcrumb-item><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">资源管理</a></a-breadcrumb-item><a-breadcrumb-item v-if="hostRouteName"><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">主机</a></a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage"><a :href="router.resolve({ name: 'host', params: { name: hostRouteName }, query: route.query }).href" @click.prevent="router.push({ name: 'host', params: { name: hostRouteName }, query: route.query })">{{ hostRouteName }}</a></a-breadcrumb-item><a-breadcrumb-item v-else>{{ hostRouteName || title }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb></div>
         <div v-if="!hostRouteName && loggedIn && section !== 'purchase'" class="page-actions-row"><a-button @click="load">刷新</a-button></div>
       </header>
       <p v-if="error" class="alert" role="alert">{{ error }}</p><p v-if="notice" class="notice" role="status">{{ notice }} <a v-if="payment?.ticket" :href="paymentURL" target="_blank" rel="noopener noreferrer">打开支付页面 ↗</a></p>
@@ -591,7 +591,6 @@ main { grid-column: 2; grid-row: 2; min-width: 0; padding: 24px; }
 .page-heading { min-width: 0; }
 .page-header .breadcrumb { min-width: 0; overflow-wrap: anywhere; }
 .page-actions-row { display: flex; align-items: center; gap: 8px; margin-left: auto; padding-bottom: 2px; }
-h1 { margin: 10px 0 0; color: var(--color-text-1, #1d2129); font-size: 20px; font-weight: 600; line-height: 30px; overflow-wrap: anywhere; }
 h2 { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
 .panel { min-width: 0; margin-bottom: 20px; padding: 20px; border-radius: 4px; background: var(--color-bg-2, #fff); }
 .panel-head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 12px; color: var(--color-text-3, #86909c); font-size: 13px; }
