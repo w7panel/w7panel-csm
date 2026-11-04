@@ -48,3 +48,10 @@ test('a late 401 retries with a token refreshed by another request', async () =>
   assert.deepEqual(await slow, { path: '/csm-api/v1/slow' })
   assert.equal(refreshes, 1)
 })
+
+test('a successful HTML fallback is reported as an unsupported API', async () => {
+  globalThis.localStorage = { getItem: () => 'token' }
+  globalThis.window = {}
+  globalThis.fetch = async () => new Response('<!doctype html>', { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+  await assert.rejects(api('/session'), error => error.code === 'unexpectedResponse' && /服务端/.test(error.message))
+})

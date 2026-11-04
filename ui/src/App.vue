@@ -75,6 +75,8 @@ const sshHost = ref('')
 const versions = ref([])
 const payment = ref(null)
 const founder = ref(false)
+const purchaseFeaturesReady = ref(false)
+const couponsReady = ref(false)
 const accounts = ref([])
 const targetNamespace = ref('')
 const coupons = ref([])
@@ -175,7 +177,8 @@ function unmountDisk(row) {
 }
 function orderRequest() {
   const request = { ...form.value }
-  request.couponCode = request.couponCode?.trim().toUpperCase() || ''
+  if (purchaseFeaturesReady.value) request.couponCode = request.couponCode?.trim().toUpperCase() || ''
+  else delete request.couponCode
   if (request.kind === 'dataDisk') { request.templateName = ''; request.cpu = 0; request.memoryGi = 0; request.bandwidthMbps = 0 }
   if (request.action === 'renew') { request.templateName = ''; request.cpu = 0; request.memoryGi = 0; request.storageGi = 0; request.bandwidthMbps = 0 }
   if (request.action === 'expand') { request.templateName = ''; request.quantity = 0; request.unit = ''; request.couponCode = '' }
@@ -257,6 +260,10 @@ async function createCoupon() {
     notice.value = '优惠码已创建。'
   } catch (e) { error.value = e.message }
 }
+async function optionalFeature(path) {
+  try { return await api(path) }
+  catch (e) { if (e.code === 'unexpectedResponse' || e.status === 404) return null; throw e }
+}
 async function load() {
   if (!loggedIn.value) return
   const sequence = ++loadSequence
@@ -276,18 +283,26 @@ async function load() {
     if (currentSection === 'purchase') {
       templates.value = items(extra).filter(item => item.spec?.initMode === 'cloudInit')
       purchasePrices.value = prices
-      const session = await api('/session')
+      const session = await optionalFeature('/session')
       if (sequence !== loadSequence) return
-      founder.value = !!session.founder
-      accounts.value = founder.value ? items(await api('/accounts')) : []
-      targetNamespace.value = founder.value && accounts.value.includes(targetNamespace.value) ? targetNamespace.value : session.namespace
+      const listedAccounts = session?.founder ? await optionalFeature('/accounts') : null
+      purchaseFeaturesReady.value = !!session
+      founder.value = !!session?.founder && !!listedAccounts
+      accounts.value = items(listedAccounts)
+      targetNamespace.value = founder.value && accounts.value.includes(targetNamespace.value) ? targetNamespace.value : session?.namespace || ''
+      if (!session) notice.value = 'CSM 服务端版本尚未更新，优惠码和创始人购买功能暂不可用。'
+      else if (session.founder && !listedAccounts) notice.value = 'CSM 服务端版本尚未更新，目标账户选择暂不可用。'
       scheduleQuote()
     }
     if (currentSection === 'pricing') {
       pricing.value = Object.fromEntries(pricingFields.map(([field]) => [field, extra ? (extra[field] / 100).toFixed(2) : '']))
       pricingCombinations.value = extra?.combinations?.map(item => ({ ...item })) || []
-      founder.value = !!(await api('/session')).founder
-      coupons.value = founder.value ? items(await api('/coupons')) : []
+      const session = await optionalFeature('/session')
+      founder.value = !!session?.founder
+      const listedCoupons = founder.value ? await optionalFeature('/coupons') : null
+      couponsReady.value = !!listedCoupons
+      coupons.value = items(listedCoupons)
+      if (!session || founder.value && !listedCoupons) notice.value = 'CSM 服务端版本尚未更新，优惠码管理暂不可用。'
     }
     if (currentSection === 'hosts') versions.value = items(extra)
     if (currentSection === 'templates') appRows.value = items(extra)
@@ -343,7 +358,10 @@ async function remove(path) {
 function orderPath(path, namespace = targetNamespace.value) { return founder.value && namespace ? `${path}?namespace=${encodeURIComponent(namespace)}` : path }
 async function buy(founderFree = false) {
   if (founder.value && !targetNamespace.value) { error.value = '请选择目标账户。'; return }
-  await run(orderPath('/orders'), { ...orderRequest(), founderFree, ...(founderFree ? { couponCode: '' } : {}) })
+  const request = orderRequest()
+  if (purchaseFeaturesReady.value) request.founderFree = founderFree
+  if (founderFree) request.couponCode = ''
+  await run(orderPath('/orders'), request)
 }
 async function refreshPayment() {
   if (!payment.value) return
@@ -473,7 +491,7 @@ onUnmounted(() => { window.removeEventListener('message', onPaymentMessage); if 
           </div>
         </div>
         <div class="purchase-total"><span>总价</span><strong v-if="quoteAmountCents !== null">¥{{ (quoteAmountCents / 100).toFixed(2) }}</strong><span v-else>—</span></div>
-        <label v-if="form.action !== 'expand'" class="purchase-coupon">优惠码<input v-model.trim="form.couponCode" placeholder="请输入优惠码" autocomplete="off" /></label>
+        <label v-if="purchaseFeaturesReady && form.action !== 'expand'" class="purchase-coupon">优惠码<input v-model.trim="form.couponCode" placeholder="请输入优惠码" autocomplete="off" /></label>
         <p v-if="quoteAmountCents !== null && purchaseCombination && purchaseCombination.discountNew < 100" class="hint" role="status">已计入组合优惠：{{ purchaseCombination.discountNew }}%（{{ purchaseCombination.discountNew / 10 }} 折）</p>
         <p v-if="quoteAmountCents !== null && form.couponCode" class="hint" role="status">优惠码已计入总价。</p>
         <p v-if="quoteLoading" class="hint" role="status">正在报价…</p><p v-else-if="quoteError" class="alert" role="alert">{{ quoteError }}</p>
@@ -492,7 +510,7 @@ onUnmounted(() => { window.removeEventListener('message', onPaymentMessage); if 
           <p v-else class="hint">暂无组合折扣。先添加一个周期，再设置该周期的资源配置。</p>
         </div>
         <button class="primary" @click="savePricing">保存费用配置</button>
-        <div v-if="founder" class="pricing-coupons">
+        <div v-if="founder && couponsReady" class="pricing-coupons">
           <div class="panel-head"><strong>优惠码</strong></div>
           <form class="grid" @submit.prevent="createCoupon"><label>优惠码<input v-model.trim="couponDraft.code" required minlength="4" maxlength="32" placeholder="例如 CSM-2026" /></label><label>资源类型<select v-model="couponDraft.kind"><option value="csm">云主机</option><option value="dataDisk">独立数据盘</option></select></label><label>订单类型<select v-model="couponDraft.action"><option value="buy">购买</option><option value="renew">续费</option></select></label><label>支付比例（%）<input v-model.number="couponDraft.discount" type="number" min="1" max="99" required /></label><label>有效期至<input v-model="couponDraft.expiresAt" type="datetime-local" required /></label><button class="primary">创建优惠码</button></form>
           <div v-if="coupons.length" class="table-wrap coupon-list"><table><thead><tr><th>优惠码</th><th>适用订单</th><th>支付比例</th><th>有效期</th><th>状态</th></tr></thead><tbody><tr v-for="coupon in coupons" :key="coupon.code"><td class="mono">{{ coupon.code }}</td><td>{{ coupon.kind === 'csm' ? '云主机' : '数据盘' }} · {{ coupon.action === 'buy' ? '购买' : '续费' }}</td><td>{{ coupon.discount }}%</td><td>{{ dateText(coupon.expiresAt) }}</td><td>{{ coupon.status === 'used' ? '已使用' : coupon.status === 'locked' ? '锁定中' : new Date(coupon.expiresAt) <= new Date() ? '已过期' : '可使用' }}</td></tr></tbody></table></div>

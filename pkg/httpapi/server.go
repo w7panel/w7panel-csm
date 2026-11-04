@@ -697,6 +697,10 @@ func respondError(w http.ResponseWriter, code int, message string) {
 
 // serveUI serves Vite's output, including index.html for client-side routes.
 func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, Prefix+"/") {
+		http.NotFound(w, r)
+		return
+	}
 	root, err := filepath.Abs(s.UIRoot)
 	if err != nil {
 		respondError(w, 500, "invalid UI path")

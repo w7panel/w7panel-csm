@@ -52,7 +52,16 @@ export async function api(path, options = {}) {
     error.status = response.status
     throw error
   }
-  return response.status === 204 ? null : response.json()
+  if (response.status === 204) return null
+  try {
+    if (response.headers?.get && !response.headers.get('content-type')?.includes('json')) throw new Error('non-JSON response')
+    return await response.json()
+  } catch {
+    const error = new Error('CSM 服务端返回了网页而非 API 数据，请更新服务端版本。')
+    error.status = response.status
+    error.code = 'unexpectedResponse'
+    throw error
+  }
 }
 
 export const items = data => Array.isArray(data) ? data : data?.items || []

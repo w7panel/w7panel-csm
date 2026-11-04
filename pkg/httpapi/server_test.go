@@ -76,6 +76,19 @@ func TestPricingFounderGuardAndQuote(t *testing.T) {
 	}
 }
 
+func TestUnknownAPIRouteDoesNotReturnUI(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "index.html"), []byte("<!doctype html>"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{UIRoot: root}
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, Prefix+"/missing", nil))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("missing API returned %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestOrderTargetAndFreeRequireFounder(t *testing.T) {
 	kube := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/namespaces" {
