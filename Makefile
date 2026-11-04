@@ -5,6 +5,7 @@ KO_DOCKER_REPO ?= docker.cnb.cool/i0358/w7panel-csm
 KO_DEFAULTBASEIMAGE ?= ccr.ccs.tencentyun.com/afan-public/ubuntu:24.04-offlineui
 KO_PLATFORM ?= linux/amd64
 KO_IMAGE_TAG ?= $(if $(CNB_BRANCH),$(CNB_BRANCH),$(shell git describe --tags --exact-match 2>/dev/null || git branch --show-current))
+VERSION ?=
 CONTROLLER_GEN ?= controller-gen
 CHART_DIR ?= charts/w7panel-csm
 CHART_VERSION = $(shell sed -n 's/^version:[[:space:]]*//p' $(CHART_DIR)/Chart.yaml | head -n 1)
@@ -18,7 +19,33 @@ GO_CACHE_DIR ?= $(CURDIR)/.cache/go
 CRD_BUILD_DIR ?= $(GO_CACHE_DIR)/crd
 GO_ENV = GOCACHE=$(GO_CACHE_DIR)/build GOMODCACHE=$(GO_CACHE_DIR)/mod GOTMPDIR=$(GO_CACHE_DIR)/tmp
 
-.PHONY: tidy fmt test build run build-ui ko-build docker-build docker-build-system manifests crd install uninstall helm-template helm-lint packageHelm deployHelm downZpk loginZpk publishZpk prepare-go-cache
+.PHONY: tidy fmt test build run build-ui build-helm build-image push-zpk full check-version check-release ko-build ko-image docker-build docker-build-system manifests crd install uninstall helm-template helm-lint packageHelm deployHelm downZpk loginZpk publishZpk prepare-go-cache
+
+check-version:
+	@test -n "$(VERSION)" || { echo 'Set VERSION=x.y.z' >&2; exit 2; }
+
+check-release: check-version
+	@for tool in npm helm ko zpk zip rsync; do command -v "$$tool" >/dev/null || { echo "Missing $$tool" >&2; exit 2; }; done
+	@test -n "$${ZPK_IDC_PASSWORD:-$${PASSWORD:-}}" || { echo 'Set ZPK_IDC_PASSWORD or PASSWORD' >&2; exit 2; }
+
+.NOTPARALLEL: full
+full: check-release build-ui build-helm build-image push-zpk
+
+build-helm: check-version
+	@$(MAKE) --no-print-directory packageHelm KO_IMAGE_TAG="$(VERSION)"
+
+build-image: check-version build-ui
+	@$(MAKE) --no-print-directory ko-image KO_IMAGE_TAG="$(VERSION)"
+
+push-zpk: check-version
+	@test -f "./w7panel-csm-$(VERSION).tgz" && test -f ./ui/dist/index.html || { echo 'Build Helm and UI first' >&2; exit 1; }
+	@test -n "$${ZPK_IDC_PASSWORD:-$${PASSWORD:-}}" || { echo 'Set ZPK_IDC_PASSWORD or PASSWORD' >&2; exit 2; }
+	cd ui/dist && rm -f dist.zip && zip -qr dist.zip .
+	zpk login --username=w7admin --password="$${ZPK_IDC_PASSWORD:-$${PASSWORD}}" --host=zpk.fan.b2.sz.w7.com
+	zpk use --name=w7panel-csm
+	zpk attach add --path=./w7panel-csm-$(VERSION).tgz --type=helm
+	zpk attach add --path=./ui/dist/dist.zip --type=frontend
+	zpk push
 
 prepare-go-cache:
 	@mkdir -p $(GO_CACHE_DIR)/build $(GO_CACHE_DIR)/mod $(GO_CACHE_DIR)/tmp
@@ -50,7 +77,10 @@ run:
 build-ui:
 	cd ui && npm run build
 
-ko-build: prepare-go-cache build-ui
+ko-build: build-ui
+	@$(MAKE) --no-print-directory ko-image
+
+ko-image: prepare-go-cache
 	@mkdir -p kodata/ui/dist
 	@rsync -a --delete ui/dist/ kodata/ui/dist/
 	@test -n "$(KO_IMAGE_TAG)" || { echo "Set KO_IMAGE_TAG to a non-empty image tag" >&2; exit 1; }

@@ -1,13 +1,17 @@
 # CSM 项目约定
 
+## 统一发布命令
+
+在项目根目录设置 `ZPK_IDC_PASSWORD` 后执行 `make full VERSION=x.y.z`，依次构建 UI、打包 Helm、通过 ko 构建并推送镜像、推送 ZPK。单独执行阶段可用 `make build-ui`、`make build-helm VERSION=x.y.z`、`make build-image VERSION=x.y.z`、`make push-zpk VERSION=x.y.z`。`full` 仅发布制品，不部署 Helm；集群部署仍按下方发布流程执行。
+
 - 本系统的界面、文档、日志和新增内部名称统一使用 CSM，不使用其他产品名称。
 - 第三方接口要求的历史字段名仅保留在协议边界，不展示给用户；修改字段前先确认对方接口兼容。
 - 本地测试前阅读 [local-test.md](local-test.md)：`make run` 在本机运行，但使用 `~/.kube/218.config` 连接 218 线上集群。
 - 每次将任务改动合并回主分支（如 `dev-v1`）并解决冲突后，检查合并结果并在主分支提交；`$worktree-merge` 本身仍不自动提交，提交作为合并后的独立步骤执行。
 
-## 发布流程
+## 集群部署流程
 
-- 用户要求发布时，在项目根目录、同一个 shell 中执行以下命令，依次构建并推送镜像、部署 Helm：
+- 用户要求部署到集群时，在项目根目录、同一个 shell 中执行以下命令，依次构建并推送镜像、部署 Helm：
 
   ```sh
   export KO_IMAGE_TAG=1.0.6 && make ko-build && make deployHelm
