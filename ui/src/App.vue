@@ -47,6 +47,20 @@ const purchaseResources = [
   { field: 'bandwidthMbps', label: '带宽', unit: 'Mbps', price: 'bandwidthMbpsCents', max: 1000 },
 ]
 const visiblePurchaseResources = computed(() => purchaseResources.filter(item => form.value.kind === 'csm' || item.field === 'storageGi'))
+const quickPurchaseOptions = computed(() => purchasePrices.value?.combinations || [])
+const selectedQuickPurchase = computed(() => quickPurchaseOptions.value.findIndex(item =>
+  ['quantity', 'unit', 'cpu', 'memoryGi', 'storageGi', 'bandwidthMbps'].every(field => item[field] === form.value[field])
+))
+function applyQuickPurchase(index) {
+  const item = quickPurchaseOptions.value[index]
+  if (item) Object.assign(form.value, { quantity: item.quantity, unit: item.unit, cpu: item.cpu, memoryGi: item.memoryGi, storageGi: item.storageGi, bandwidthMbps: item.bandwidthMbps })
+}
+const morePurchasePeriod = computed(() => purchasePeriods.slice(8).find(item => item.quantity === form.value.quantity && item.unit === form.value.unit))
+function selectPurchasePeriod(key) {
+  const [unit, quantity] = key.split(':')
+  form.value.quantity = Number(quantity)
+  form.value.unit = unit
+}
 const purchasePeriods = [
   { quantity: 1, unit: 'month' }, { quantity: 2, unit: 'month' }, { quantity: 3, unit: 'month' },
   ...Array.from({ length: 10 }, (_, index) => ({ quantity: index + 1, unit: 'year' })),
@@ -110,7 +124,7 @@ function openTerminal() {
 function closeTerminal() {
   terminalOpen.value = false
 }
-const title = computed(() => route.name === 'apps' ? '初始化配置' : section.value === 'purchase' ? '购买' : tabs.find(([id]) => id === section.value)?.[1] || '主机')
+const title = computed(() => route.name === 'apps' ? '初始化配置' : section.value === 'purchase' ? '费用清单' : tabs.find(([id]) => id === section.value)?.[1] || '主机')
 const resource = { hosts: 'csms', templates: 'system-templates', preinstall: 'preinstall-executions', upgrade: 'upgrade-executions', orders: 'orders', disks: 'data-disks', apps: 'preinstall-applications', versions: 'upgrade-versions' }
 
 async function login() {
@@ -370,7 +384,7 @@ onUnmounted(() => { if (isMicroApp) window.$wujie?.bus?.$off?.('routeChange', on
     </a-drawer>
     <main>
       <header class="page-header">
-        <a-breadcrumb class="breadcrumb"><a-breadcrumb-item><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">资源管理</a></a-breadcrumb-item><a-breadcrumb-item v-if="hostRouteName"><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">主机</a></a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage"><a :href="router.resolve({ name: 'host', params: { name: hostRouteName }, query: route.query }).href" @click.prevent="router.push({ name: 'host', params: { name: hostRouteName }, query: route.query })">{{ hostRouteName }}</a></a-breadcrumb-item><a-breadcrumb-item v-else>{{ hostRouteName || title }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb>
+        <div class="page-heading"><a-breadcrumb class="breadcrumb"><a-breadcrumb-item><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">资源管理</a></a-breadcrumb-item><a-breadcrumb-item v-if="hostRouteName"><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">主机</a></a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage"><a :href="router.resolve({ name: 'host', params: { name: hostRouteName }, query: route.query }).href" @click.prevent="router.push({ name: 'host', params: { name: hostRouteName }, query: route.query })">{{ hostRouteName }}</a></a-breadcrumb-item><a-breadcrumb-item v-else>{{ hostRouteName || title }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb><h1 v-if="!hostRouteName || terminalPage">{{ terminalPage ? '终端' : title }}</h1></div>
         <div v-if="!hostRouteName && loggedIn" class="page-actions-row"><a-button @click="load">刷新</a-button></div>
       </header>
       <p v-if="error" class="alert" role="alert">{{ error }}</p><p v-if="notice" class="notice" role="status">{{ notice }} <a v-if="payment?.ticket" :href="`https://ip.w7.cc/pay/${encodeURIComponent(payment.ticket)}?header=false&footer=false`" target="_blank" rel="noopener noreferrer">前往 W7 云支付 ↗</a></p>
@@ -384,13 +398,19 @@ onUnmounted(() => { if (isMicroApp) window.$wujie?.bus?.$off?.('routeChange', on
           <label v-if="form.kind === 'csm' && form.action === 'buy'">系统模板<select v-model="form.templateName" required><option value="">请选择系统模板</option><option v-for="item in templates" :key="nameOf(item)" :value="nameOf(item)">{{ nameOf(item) }}</option></select></label>
         </div>
         <p v-if="form.kind === 'csm' && form.action === 'buy' && !loading && !templates.length" class="alert" role="alert">暂无可用系统模板，请先创建系统模板。</p>
+        <div v-if="form.kind === 'csm' && form.action === 'buy' && quickPurchaseOptions.length" class="purchase-quick">
+          <span>快速选择配置</span>
+          <a-select :model-value="selectedQuickPurchase < 0 ? undefined : selectedQuickPurchase" aria-label="快速选择配置" placeholder="请选择配置" @change="applyQuickPurchase">
+            <a-option v-for="(item, index) in quickPurchaseOptions" :key="index" :value="index">{{ item.quantity }}{{ periodUnits[item.unit] }}/{{ item.cpu }}核/{{ item.memoryGi }}GiB/{{ item.bandwidthMbps }}Mbps/{{ item.storageGi }}GiB{{ item.discountNew < 100 ? ` · ${item.discountNew / 10} 折` : '' }}</a-option>
+          </a-select>
+        </div>
         <div class="purchase-table">
           <div class="purchase-row purchase-row-head"><span>名称</span><span>配置</span><span>价格</span></div>
           <div v-for="item in visiblePurchaseResources" :key="item.field" class="purchase-row">
             <span class="purchase-label">{{ item.label }}</span>
             <div v-if="form.action !== 'renew'" class="purchase-control">
-              <input v-model.number="form[item.field]" type="range" min="1" :max="Math.max(item.max, Number(form[item.field]) || 1)" :aria-label="`${item.label}配置滑块`" />
-              <label class="purchase-number"><input v-model.number="form[item.field]" type="number" min="1" :aria-label="`${item.label}配置`" /><span>{{ item.unit }}</span></label>
+              <a-slider v-model="form[item.field]" :min="1" :max="Math.max(item.max, Number(form[item.field]) || 1)" :aria-label="`${item.label}配置滑块`" />
+              <a-input-number v-model="form[item.field]" class="purchase-number" :min="1" :precision="0" :aria-label="`${item.label}配置`"><template #append>{{ item.unit }}</template></a-input-number>
             </div>
             <span v-else class="purchase-muted">沿用当前配置</span>
             <span class="purchase-price">{{ linePrice(item) }}<small v-if="purchasePrices && form.action === 'buy'">¥{{ (purchasePrices[item.price] / 100).toFixed(2) }} / {{ item.unit }} / 月</small></span>
@@ -399,7 +419,8 @@ onUnmounted(() => { if (isMicroApp) window.$wujie?.bus?.$off?.('routeChange', on
         <div v-if="form.action !== 'expand'" class="purchase-duration">
           <strong>购买时长</strong>
           <div class="purchase-periods">
-            <button v-for="period in purchasePeriods" :key="`${period.quantity}-${period.unit}`" type="button" class="light" :class="{ chosen: form.quantity === period.quantity && form.unit === period.unit }" @click="form.quantity = period.quantity; form.unit = period.unit">{{ period.quantity }}{{ periodUnits[period.unit] }}</button>
+            <button v-for="period in purchasePeriods.slice(0, 8)" :key="`${period.quantity}-${period.unit}`" type="button" class="light" :class="{ chosen: form.quantity === period.quantity && form.unit === period.unit }" @click="form.quantity = period.quantity; form.unit = period.unit">{{ period.quantity }}{{ periodUnits[period.unit] }}</button>
+            <a-dropdown trigger="click" @select="selectPurchasePeriod"><button type="button" class="light" :class="{ chosen: morePurchasePeriod }">{{ morePurchasePeriod ? `${morePurchasePeriod.quantity}${periodUnits[morePurchasePeriod.unit]}` : '更多时长' }} ▾</button><template #content><a-doption v-for="period in purchasePeriods.slice(8)" :key="`${period.quantity}-${period.unit}`" :value="`${period.unit}:${period.quantity}`">{{ period.quantity }}{{ periodUnits[period.unit] }}</a-doption></template></a-dropdown>
           </div>
           <div class="purchase-custom"><label>自定义时长<input v-model.number="form.quantity" type="number" min="1" :max="periodLimits[form.unit]" /></label><label>单位<select v-model="form.unit"><option value="day">天</option><option value="month">月</option><option value="year">年</option></select></label></div>
         </div>
@@ -475,7 +496,7 @@ body { margin: 0; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px solid rgb(var(--primary-6, 22, 93, 255)); outline-offset: 2px; }
-.shell { display: grid; grid-template-columns: 208px minmax(0, 1fr); grid-template-rows: 60px minmax(calc(100vh - 60px), auto); min-height: 100vh; background: var(--color-fill-1, #f7f8fa); }
+.shell { display: grid; grid-template-columns: 220px minmax(0, 1fr); grid-template-rows: 60px minmax(calc(100vh - 60px), auto); min-height: 100vh; background: var(--color-bg-2, #fff); }
 .topbar { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; min-width: 0; padding: 0 24px; border-bottom: 1px solid var(--color-border-2, #e5e6eb); background: var(--color-bg-2, #fff); }
 .topbar-brand { display: flex; align-items: center; gap: 10px; color: var(--color-text-1, #1d2129); font-family: 'Segoe UI', 'PingFang SC', sans-serif; font-size: 19px; font-weight: 700; letter-spacing: .02em; }
 .topbar-brand small { margin-left: 2px; padding-left: 12px; border-left: 1px solid var(--color-border-2, #e5e6eb); color: var(--color-text-3, #86909c); font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; font-size: 12px; font-weight: 400; letter-spacing: 0; }
@@ -487,17 +508,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .brand { padding: 22px 20px 9px; color: var(--color-text-3, #86909c); font-size: 12px; }
 .app-menu { padding: 4px 8px; background: transparent; }
 .app-menu .arco-menu-item { height: 40px; margin: 2px 0; border-radius: 4px; }
-.app-menu .arco-menu-item.arco-menu-selected { background: var(--color-primary-light-1, #e8f3ff); }
+.app-menu .arco-menu-item.arco-menu-selected { background: var(--color-primary-light-1, #e8f3ff); color: rgb(var(--primary-6, 22, 93, 255)); font-weight: 600; }
 .mobile-menu-trigger { display: none; }
 main { grid-column: 2; grid-row: 2; min-width: 0; padding: 24px; }
 .shell--micro { display: block; background: #fff; }
 .shell--micro main { min-height: 100vh; padding: 20px; }
-.page-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.page-heading { min-width: 0; }
 .page-header .breadcrumb { min-width: 0; overflow-wrap: anywhere; }
 .page-actions-row { display: flex; align-items: center; gap: 8px; margin-left: auto; padding-bottom: 2px; }
-h1 { margin: 6px 0 0; color: var(--color-text-1, #1d2129); font-size: 20px; font-weight: 600; line-height: 30px; }
+h1 { margin: 10px 0 0; color: var(--color-text-1, #1d2129); font-size: 20px; font-weight: 600; line-height: 30px; overflow-wrap: anywhere; }
 h2 { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
-.panel { min-width: 0; margin-bottom: 20px; padding: 20px; border: 1px solid var(--color-border-2, #e5e6eb); border-radius: 4px; background: var(--color-bg-2, #fff); }
+.panel { min-width: 0; margin-bottom: 20px; padding: 20px; border-radius: 4px; background: var(--color-bg-2, #fff); }
 .panel-head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 12px; color: var(--color-text-3, #86909c); font-size: 13px; }
 .light, .primary { min-height: 32px; padding: 0 15px; border: 1px solid var(--color-border-2, #e5e6eb); border-radius: 2px; background: var(--color-fill-2, #f2f3f5); color: var(--color-text-1, #1d2129); }
 .light:hover { background: var(--color-fill-3, #e5e6eb); }
@@ -543,7 +565,7 @@ textarea { min-height: 90px; resize: vertical; }
 .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 .actions input { max-width: 320px; }
 .empty { padding: 48px 16px; color: var(--color-text-3, #86909c); text-align: center; }
-.detail { padding: 20px; border: 1px solid var(--color-border-2, #e5e6eb); }
+.detail { padding: 20px; }
 .detail dl { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; }
 .detail dt { color: var(--color-text-3, #86909c); }
 .detail dd { margin: 0; overflow-wrap: anywhere; }
@@ -566,6 +588,7 @@ textarea { min-height: 90px; resize: vertical; }
   .grid { grid-template-columns: 1fr; }
   .page-actions-row > * { min-height: 44px; }
   .page-header { flex-wrap: wrap; }
+  .page-heading { flex: 1 1 100%; }
   .order-panel-head { row-gap: 12px; }
 }
 input[type='range'] { min-height: 0; padding: 0; border: 0; background: transparent; accent-color: rgb(var(--primary-6, 22, 93, 255)); }
@@ -585,17 +608,18 @@ input[type='checkbox'] { width: auto; min-height: 0; padding: 0; accent-color: r
 .order-search-field input { min-width: 0; }
 .panel-head strong { color: var(--color-text-1, #1d2129); }
 .detail .actions label { min-width: 220px; }
-.purchase-page { max-width: 1020px; margin-inline: auto; }
+.purchase-page { max-width: 960px; margin-inline: auto; }
 .purchase-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
-.purchase-table { border: 1px solid var(--color-border-2, #e5e6eb); border-radius: 2px; overflow: hidden; }
-.purchase-row { display: grid; grid-template-columns: 120px minmax(0, 1fr) 190px; gap: 18px; align-items: center; min-height: 72px; padding: 12px 18px; border-top: 1px solid var(--color-border-2, #e5e6eb); }
+.purchase-quick { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.purchase-quick > span { flex: none; }
+.purchase-quick .arco-select { width: min(360px, 100%); }
+.purchase-table { overflow: hidden; }
+.purchase-row { display: grid; grid-template-columns: 120px minmax(0, 1fr) 190px; gap: 18px; align-items: center; min-height: 60px; padding: 10px 16px; border-top: 1px solid var(--color-border-2, #e5e6eb); }
 .purchase-row-head { min-height: 42px; border-top: 0; background: var(--color-fill-2, #f2f3f5); color: var(--color-text-3, #86909c); font-size: 12px; font-weight: 600; }
 .purchase-label { font-weight: 600; }
 .purchase-control { display: flex; align-items: center; gap: 20px; min-width: 0; }
-.purchase-control input[type='range'] { flex: 1; min-width: 80px; }
-.purchase-number { display: flex; flex: none; flex-direction: row; align-items: center; gap: 0; border: 1px solid var(--color-border-2, #e5e6eb); }
-.purchase-number input { width: 90px; border: 0; text-align: right; }
-.purchase-number span { align-self: stretch; display: flex; align-items: center; padding: 0 10px; background: var(--color-fill-2, #f2f3f5); color: var(--color-text-3, #86909c); }
+.purchase-control .arco-slider { flex: 1; min-width: 80px; }
+.purchase-control .arco-input-number { flex: none; width: 150px; }
 .purchase-price { color: rgb(var(--orange-6, 255, 125, 0)); font-weight: 600; text-align: right; }
 .purchase-price small { display: block; margin-top: 3px; color: var(--color-text-3, #86909c); font-size: 11px; font-weight: 400; }
 .purchase-muted { color: var(--color-text-3, #86909c); }
@@ -616,8 +640,11 @@ input[type='checkbox'] { width: auto; min-height: 0; padding: 0; accent-color: r
   .purchase-row-head span:last-child { display: none; }
   .purchase-price { grid-column: 2; text-align: left; }
   .purchase-control { gap: 8px; }
-  .purchase-number input { width: 64px; }
+  .purchase-control .arco-input-number { width: 118px; }
   .purchase-custom label:first-child { width: 150px; }
+  .purchase-quick { align-items: stretch; flex-direction: column; }
+  .purchase-quick .arco-select { width: 100%; min-height: 44px; }
+  .purchase-periods .light, .purchase-actions .primary { min-height: 44px; }
 }
 @media (max-width: 600px) {
   .panel-head { flex-wrap: wrap; }

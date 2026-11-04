@@ -98,7 +98,7 @@ const phase = { running: '执行中', applying: '应用中', succeeded: '成功'
 </template>
 
 <style scoped>
-.version-form,.version-detail{margin-top:24px;padding:20px;border:1px solid var(--color-border-2,#e5e6eb)}
+.version-form,.version-detail{margin-top:24px;padding:20px;background:var(--color-bg-2,#fff)}
 .version-detail>.panel-head h2{overflow-wrap:anywhere}
 .version-detail>.primary,.version-detail>.light{margin-bottom:12px}
 .policy-enabled{display:flex;align-items:center;gap:8px}.policy-enabled input{width:auto}
