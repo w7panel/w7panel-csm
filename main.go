@@ -222,13 +222,15 @@ func run() error {
 
 	backend := httpapi.KubeBackend{BaseURL: cfg.Host, Token: cfg.BearerToken, Client: kubeHTTP}
 	store := order.KubeStore{BaseURL: cfg.Host, Token: cfg.BearerToken, Client: kubeHTTP}
-	pricing := order.KubePricing{Kube: kube, Store: store, Namespace: pricingNamespace, ProductID: productID}
+	coupons := &order.KubeCoupons{Kube: kube, Namespace: pricingNamespace}
+	pricing := order.KubePricing{Kube: kube, Store: store, Coupons: coupons, Namespace: pricingNamespace, ProductID: productID}
 	var gateway order.Gateway = order.W7Gateway{NotifyURL: "https://" + callbackHost + httpapi.Prefix + "/order/notify", Credential: integration.AccountCredential(kube, resources, credentialNamespace), Quote: pricing.Quote}
 	if mockPay {
 		gateway = order.MockGateway{Quote: pricing.Quote}
 	}
-	server := httpapi.NewServer(authenticator.Authenticate, backend, order.Service{Gateway: gateway, Store: store, AutoConfirm: mockPay}, uiRoot)
+	server := httpapi.NewServer(authenticator.Authenticate, backend, order.Service{Gateway: gateway, Store: store, Coupons: coupons, AutoConfirm: mockPay}, uiRoot)
 	server.Pricing = pricing
+	server.Coupons = coupons
 	server.KubeURL, server.KubeToken, server.KubeClient = cfg.Host, cfg.BearerToken, kubeHTTP
 	addr := os.Getenv("CSM_HTTP_ADDR")
 	if addr == "" {

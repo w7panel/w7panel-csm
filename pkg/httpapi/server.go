@@ -48,6 +48,7 @@ type Server struct {
 		Delete(context.Context) error
 		Quote(context.Context, order.Request) (int64, string, url.Values, error)
 	}
+	Coupons        *order.KubeCoupons
 	UIRoot         string // absolute path to ui/dist at runtime
 	KubeURL        string
 	KubeToken      string
@@ -103,6 +104,10 @@ func (s *Server) Handler() http.Handler {
 	route("POST", "/data-disks/{name}/unmount", s.action("data-disks", "unmount"))
 	route("DELETE", "/data-disks/{name}", s.action("data-disks", "delete"))
 	route("POST", "/orders", s.createOrder)
+	route("GET", "/session", s.session)
+	route("GET", "/accounts", s.accounts)
+	route("GET", "/coupons", s.listCoupons)
+	route("POST", "/coupons", s.createCoupon)
 	route("GET", "/pricing", s.getPricing)
 	route("PUT", "/pricing", s.putPricing)
 	route("DELETE", "/pricing", s.deletePricing)
@@ -185,7 +190,7 @@ func (s *Server) quoteOrder(w http.ResponseWriter, r *http.Request) {
 		respondError(w, 503, "pricing is not configured")
 		return
 	}
-	ns, ok := namespace(w, r)
+	ns, ok := s.orderNamespace(w, r)
 	if !ok {
 		return
 	}
@@ -197,7 +202,14 @@ func (s *Server) quoteOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Namespace = ns
+	if req.FounderFree && !identity(r.Context()).Founder {
+		respondError(w, 403, "founder required")
+		return
+	}
 	cents, _, _, err := s.Pricing.Quote(r.Context(), req)
+	if req.FounderFree {
+		cents = 0
+	}
 	if errors.Is(err, order.ErrPricingMissing) {
 		respondError(w, 503, "pricing is not configured")
 		return
@@ -254,6 +266,135 @@ func namespace(w http.ResponseWriter, r *http.Request) (string, bool) {
 	if !validName(requested) {
 		respondError(w, http.StatusBadRequest, "invalid namespace")
 		return "", false
+	}
+	return requested, true
+}
+
+func (s *Server) session(w http.ResponseWriter, r *http.Request) {
+	user := identity(r.Context())
+	writeResult(w, struct {
+		Namespace string `json:"namespace"`
+		Founder   bool   `json:"founder"`
+	}{user.Namespace, user.Founder}, nil)
+}
+
+func (s *Server) kubeNamespaces(ctx context.Context, name string, result any) error {
+	if s.KubeURL == "" || s.KubeToken == "" {
+		return errors.New("Kubernetes account lookup is not configured")
+	}
+	endpoint := strings.TrimRight(s.KubeURL, "/") + "/api/v1/namespaces"
+	if name != "" {
+		endpoint += "/" + url.PathEscape(name)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+s.KubeToken)
+	client := s.KubeClient
+	if client == nil {
+		client = &http.Client{Timeout: 10 * time.Second}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrNotFound
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Kubernetes account lookup returned HTTP %d", resp.StatusCode)
+	}
+	return json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(result)
+}
+
+func (s *Server) accounts(w http.ResponseWriter, r *http.Request) {
+	if !identity(r.Context()).Founder {
+		respondError(w, 403, "founder required")
+		return
+	}
+	var list struct {
+		Items []struct {
+			Metadata struct {
+				Name string `json:"name"`
+			} `json:"metadata"`
+		} `json:"items"`
+	}
+	if err := s.kubeNamespaces(r.Context(), "", &list); err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	accounts := []string{}
+	for _, item := range list.Items {
+		name := item.Metadata.Name
+		if strings.HasPrefix(name, "csm-") && validName(name) {
+			accounts = append(accounts, name)
+		}
+	}
+	writeResult(w, struct {
+		Items []string `json:"items"`
+	}{accounts}, nil)
+}
+
+func (s *Server) listCoupons(w http.ResponseWriter, r *http.Request) {
+	if !identity(r.Context()).Founder {
+		respondError(w, 403, "founder required")
+		return
+	}
+	if s.Coupons == nil {
+		respondError(w, 503, "coupons are not configured")
+		return
+	}
+	items, err := s.Coupons.List(r.Context())
+	writeResult(w, struct {
+		Items []order.Coupon `json:"items"`
+	}{items}, err)
+}
+
+func (s *Server) createCoupon(w http.ResponseWriter, r *http.Request) {
+	if !identity(r.Context()).Founder {
+		respondError(w, 403, "founder required")
+		return
+	}
+	if s.Coupons == nil {
+		respondError(w, 503, "coupons are not configured")
+		return
+	}
+	var coupon order.Coupon
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 64<<10))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&coupon) != nil || decoder.Decode(new(any)) != io.EOF {
+		respondError(w, 400, "invalid JSON")
+		return
+	}
+	if err := s.Coupons.Create(r.Context(), coupon); err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+}
+
+func (s *Server) orderNamespace(w http.ResponseWriter, r *http.Request) (string, bool) {
+	user := identity(r.Context())
+	requested := strings.TrimSpace(r.URL.Query().Get("namespace"))
+	if requested == "" {
+		requested = user.Namespace
+	}
+	if !user.Founder && requested != user.Namespace {
+		respondError(w, 403, "founder required")
+		return "", false
+	}
+	if !validName(requested) || (requested != user.Namespace && (!strings.HasPrefix(requested, "csm-") || len(requested) <= 4)) {
+		respondError(w, 400, "invalid target account")
+		return "", false
+	}
+	if user.Founder && requested != user.Namespace {
+		var target any
+		if err := s.kubeNamespaces(r.Context(), requested, &target); err != nil {
+			writeResult(w, nil, err)
+			return "", false
+		}
 	}
 	return requested, true
 }
@@ -378,7 +519,7 @@ func (s *Server) action(kind, action string) http.HandlerFunc {
 }
 
 func (s *Server) createOrder(w http.ResponseWriter, r *http.Request) {
-	ns, ok := namespace(w, r)
+	ns, ok := s.orderNamespace(w, r)
 	if !ok {
 		return
 	}
@@ -388,6 +529,10 @@ func (s *Server) createOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Namespace = ns // Never accept a tenant from the request body.
+	if req.FounderFree && !identity(r.Context()).Founder {
+		respondError(w, 403, "founder required")
+		return
+	}
 	if err := order.Validate(req); err != nil {
 		writeResult(w, nil, err)
 		return

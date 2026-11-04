@@ -5,7 +5,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["namespaces"]
-    verbs: ["create"]
+    verbs: ["get", "list", "create"]
   - apiGroups: ["csm.w7.cc"]
     resources: ["csms", "csms/status", "csms/finalizers", "datadisks", "datadisks/status", "datadisks/finalizers", "systemtemplates", "systemtemplates/status", "preinstallapplications", "preinstallexecutions", "preinstallexecutions/status", "upgradeversions", "upgradepolicies", "upgradeexecutions", "upgradeexecutions/status", "csmorders", "csmorders/status"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -20,7 +20,7 @@ rules:
     verbs: ["create"]
   - apiGroups: [""]
     resources: ["configmaps"]
-    resourceNames: ["w7panel-csm-pricing"]
+    resourceNames: ["w7panel-csm-pricing", "w7panel-csm-coupons"]
     verbs: ["get", "update", "patch", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments"]

@@ -39,7 +39,7 @@ const selected = ref(null)
 const templates = ref([])
 const appRows = ref([])
 function newCsmName() { return `csm-${Math.floor(Math.random() * 100000).toString().padStart(5, '0')}` }
-function newCsmOrder() { return { kind: 'csm', action: 'buy', name: newCsmName(), templateName: '', cpu: 2, memoryGi: 4, storageGi: 40, bandwidthMbps: 5, quantity: 1, unit: 'month' } }
+function newCsmOrder() { return { kind: 'csm', action: 'buy', name: newCsmName(), templateName: '', cpu: 2, memoryGi: 4, storageGi: 40, bandwidthMbps: 5, quantity: 1, unit: 'month', couponCode: '' } }
 const form = ref(newCsmOrder())
 const purchasePrices = ref(null)
 const purchaseResources = [
@@ -74,6 +74,12 @@ const mountTarget = ref('')
 const sshHost = ref('')
 const versions = ref([])
 const payment = ref(null)
+const founder = ref(false)
+const accounts = ref([])
+const targetNamespace = ref('')
+const coupons = ref([])
+const couponDraft = ref({ code: '', kind: 'csm', action: 'buy', discount: 80, expiresAt: '' })
+const paymentURL = computed(() => payment.value?.ticket ? `https://ip.w7.cc/pay/${encodeURIComponent(payment.value.ticket)}?header=false&footer=false&paid_callback=https%3A%2F%2Fuser.w7.cc%2Forder` : '')
 const pricingFields = [
   ['cpuCents', 'CPU', '核'], ['memoryGiCents', '内存', 'GiB'],
   ['storageGiCents', '存储', 'GiB'], ['bandwidthMbpsCents', '带宽', 'Mbps'],
@@ -144,7 +150,7 @@ async function login() {
 function go(id) { notice.value = ''; payment.value = null; selected.value = null; terminalOpen.value = false; mobileMenuOpen.value = false; router.push({ name: id }) }
 function openCsmPurchase() { form.value = newCsmOrder(); go('purchase') }
 function orderForDisk(action, disk) {
-  form.value = { kind: 'dataDisk', action, name: disk?.metadata?.name || '', templateName: '', cpu: 0, memoryGi: 0, storageGi: action === 'expand' ? Number(disk.spec?.storageGi || 0) + 10 : action === 'buy' ? 10 : 0, bandwidthMbps: 0, quantity: 1, unit: 'month' }
+  form.value = { kind: 'dataDisk', action, name: disk?.metadata?.name || '', templateName: '', cpu: 0, memoryGi: 0, storageGi: action === 'expand' ? Number(disk.spec?.storageGi || 0) + 10 : action === 'buy' ? 10 : 0, bandwidthMbps: 0, quantity: 1, unit: 'month', couponCode: '' }
   go('purchase')
 }
 function orderStatus(row) { return ({ pending: '待支付', paid: '已支付', applying: '生效中', failed: '失败' })[row.status] || row.status || '—' }
@@ -169,9 +175,10 @@ function unmountDisk(row) {
 }
 function orderRequest() {
   const request = { ...form.value }
+  request.couponCode = request.couponCode?.trim().toUpperCase() || ''
   if (request.kind === 'dataDisk') { request.templateName = ''; request.cpu = 0; request.memoryGi = 0; request.bandwidthMbps = 0 }
   if (request.action === 'renew') { request.templateName = ''; request.cpu = 0; request.memoryGi = 0; request.storageGi = 0; request.bandwidthMbps = 0 }
-  if (request.action === 'expand') { request.templateName = ''; request.quantity = 0; request.unit = '' }
+  if (request.action === 'expand') { request.templateName = ''; request.quantity = 0; request.unit = ''; request.couponCode = '' }
   return request
 }
 function linePrice(item) {
@@ -189,7 +196,7 @@ function scheduleQuote() {
   quoteLoading.value = true
   quoteTimer = setTimeout(async () => {
     try {
-      const quote = await api('/orders/quote', { method: 'POST', body: JSON.stringify(orderRequest()) })
+      const quote = await api(orderPath('/orders/quote'), { method: 'POST', body: JSON.stringify(orderRequest()) })
       if (sequence === quoteSequence) quoteAmountCents.value = quote.amountCents
     } catch (e) { if (sequence === quoteSequence) quoteError.value = e.status === 503 ? '尚未设置资源单价，无法报价。' : e.message }
     finally { if (sequence === quoteSequence) quoteLoading.value = false }
@@ -241,6 +248,15 @@ async function savePricing() {
     await load()
   } catch (e) { error.value = e.message }
 }
+async function createCoupon() {
+  error.value = ''; notice.value = ''
+  try {
+    await api('/coupons', { method: 'POST', body: JSON.stringify({ ...couponDraft.value, code: couponDraft.value.code.trim().toUpperCase(), discount: Number(couponDraft.value.discount), expiresAt: new Date(couponDraft.value.expiresAt).toISOString() }) })
+    couponDraft.value.code = ''
+    coupons.value = items(await api('/coupons'))
+    notice.value = '优惠码已创建。'
+  } catch (e) { error.value = e.message }
+}
 async function load() {
   if (!loggedIn.value) return
   const sequence = ++loadSequence
@@ -260,11 +276,18 @@ async function load() {
     if (currentSection === 'purchase') {
       templates.value = items(extra).filter(item => item.spec?.initMode === 'cloudInit')
       purchasePrices.value = prices
+      const session = await api('/session')
+      if (sequence !== loadSequence) return
+      founder.value = !!session.founder
+      accounts.value = founder.value ? items(await api('/accounts')) : []
+      targetNamespace.value = founder.value && accounts.value.includes(targetNamespace.value) ? targetNamespace.value : session.namespace
       scheduleQuote()
     }
     if (currentSection === 'pricing') {
       pricing.value = Object.fromEntries(pricingFields.map(([field]) => [field, extra ? (extra[field] / 100).toFixed(2) : '']))
       pricingCombinations.value = extra?.combinations?.map(item => ({ ...item })) || []
+      founder.value = !!(await api('/session')).founder
+      coupons.value = founder.value ? items(await api('/coupons')) : []
     }
     if (currentSection === 'hosts') versions.value = items(extra)
     if (currentSection === 'templates') appRows.value = items(extra)
@@ -305,8 +328,8 @@ async function run(path, body) {
   error.value = ''; notice.value = ''; payment.value = null
   try {
     const result = await api(path, { method: 'POST', body: JSON.stringify(body || {}) })
-    notice.value = result?.status === 'paid' ? `订单 ${result.orderSn} 已支付，资源正在生效。` : result?.orderSn ? `订单 ${result.orderSn} 已创建，支付确认后生效。` : '操作已提交。'
-    if (result?.ticket) payment.value = result
+    notice.value = result?.status === 'paid' ? `订单 ${result.orderSn} 已支付，资源正在生效。` : result?.orderSn ? result.needPay ? `订单 ${result.orderSn} 已创建，支付确认后生效。` : `订单 ${result.orderSn} 已创建，正在确认生效。` : '操作已提交。'
+    if (result?.needPay && result?.ticket) payment.value = result
     if (section.value === 'disks') selected.value = null
     await Promise.all([load(), hostRouteName.value ? loadHost(hostRouteName.value) : null])
     return result
@@ -317,8 +340,22 @@ async function remove(path) {
   try { await api(path, { method: 'DELETE' }); selected.value = null; await load() }
   catch (e) { error.value = e.message }
 }
-async function buy() {
-  await run('/orders', orderRequest())
+function orderPath(path, namespace = targetNamespace.value) { return founder.value && namespace ? `${path}?namespace=${encodeURIComponent(namespace)}` : path }
+async function buy(founderFree = false) {
+  if (founder.value && !targetNamespace.value) { error.value = '请选择目标账户。'; return }
+  await run(orderPath('/orders'), { ...orderRequest(), founderFree, ...(founderFree ? { couponCode: '' } : {}) })
+}
+async function refreshPayment() {
+  if (!payment.value) return
+  const current = payment.value
+  try {
+    const result = await api(orderPath(`/orders/${encodeURIComponent(current.orderSn)}/refresh`, current.namespace), { method: 'POST' })
+    if (result.status === 'paid') { payment.value = null; notice.value = '支付成功，资源正在生效。'; await load() }
+    else notice.value = '尚未查询到支付成功，请稍后重试。'
+  } catch (e) { if (e.status === 409) notice.value = '尚未查询到支付成功，请稍后重试。'; else error.value = e.message }
+}
+function onPaymentMessage(event) {
+  if (payment.value && ['https://ip.w7.cc', 'https://user.w7.cc'].includes(event.origin) && event.data?.type === 'paysuccess') refreshPayment()
 }
 function openAppDrawer() {
   draft.value = { name: '', cloudConfig: '#cloud-config\npackages:\n  - curl\n', shell: '', kind: 'cloud', order: 0, resourceVersion: '' }
@@ -349,6 +386,7 @@ function phaseOf(row) { return row.status?.phase || row.status || row.spec?.orde
 watch(section, load)
 watch(() => route.fullPath, syncRoute)
 watch(form, scheduleQuote, { deep: true })
+watch(targetNamespace, scheduleQuote)
 watch(() => [form.value.kind, form.value.action], ([kind, action], [oldKind, oldAction]) => {
   if (kind === 'csm' && action === 'buy' && !/^csm-\d{5}$/.test(form.value.name)) form.value.name = newCsmName()
   else if (kind === 'csm' && oldKind === 'csm' && oldAction === 'buy' && action !== 'buy') form.value.name = ''
@@ -363,6 +401,7 @@ watch(() => form.value.kind, kind => {
 })
 function onHostRoute(path, data) { if (!data?.fromSubPanel) router.push(path || '/hosts') }
 onMounted(async () => {
+  window.addEventListener('message', onPaymentMessage)
   if (isMicroApp) window.$wujie?.bus?.$on?.('routeChange', onHostRoute)
   try {
     await router.isReady()
@@ -373,7 +412,7 @@ onMounted(async () => {
     sshHost.value = config.sshHost || ''
   } catch (e) { error.value = e.message }
 })
-onUnmounted(() => { if (isMicroApp) window.$wujie?.bus?.$off?.('routeChange', onHostRoute) })
+onUnmounted(() => { window.removeEventListener('message', onPaymentMessage); if (isMicroApp) window.$wujie?.bus?.$off?.('routeChange', onHostRoute) })
 </script>
 
 <template>
@@ -395,10 +434,11 @@ onUnmounted(() => { if (isMicroApp) window.$wujie?.bus?.$off?.('routeChange', on
         <div class="page-heading"><a-breadcrumb class="breadcrumb"><a-breadcrumb-item><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">资源管理</a></a-breadcrumb-item><a-breadcrumb-item v-if="hostRouteName"><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">主机</a></a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage"><a :href="router.resolve({ name: 'host', params: { name: hostRouteName }, query: route.query }).href" @click.prevent="router.push({ name: 'host', params: { name: hostRouteName }, query: route.query })">{{ hostRouteName }}</a></a-breadcrumb-item><a-breadcrumb-item v-else>{{ hostRouteName || title }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb><h1 v-if="section !== 'purchase' && (!hostRouteName || terminalPage)">{{ terminalPage ? '终端' : title }}</h1></div>
         <div v-if="!hostRouteName && loggedIn && section !== 'purchase'" class="page-actions-row"><a-button @click="load">刷新</a-button></div>
       </header>
-      <p v-if="error" class="alert" role="alert">{{ error }}</p><p v-if="notice" class="notice" role="status">{{ notice }} <a v-if="payment?.ticket" :href="`https://ip.w7.cc/pay/${encodeURIComponent(payment.ticket)}?header=false&footer=false`" target="_blank" rel="noopener noreferrer">前往 W7 云支付 ↗</a></p>
+      <p v-if="error" class="alert" role="alert">{{ error }}</p><p v-if="notice" class="notice" role="status">{{ notice }} <a v-if="payment?.ticket" :href="paymentURL" target="_blank" rel="noopener noreferrer">打开支付页面 ↗</a></p>
       <section v-if="!loggedIn" class="panel"><h2>{{ isMicroApp ? '连接 CSM' : '登录 CSM' }}</h2><p class="hint">{{ isMicroApp ? '正在通过宿主授权访问 CSM。' : '使用 W7Panel 账户授权后管理云主机。' }}</p><button v-if="!loginPending" class="primary" @click="login">{{ isMicroApp ? '重试授权' : '登录' }}</button></section>
       <template v-else><section v-if="section === 'purchase'" class="panel purchase-page">
         <div class="purchase-meta">
+          <label v-if="founder">目标账户<select v-model="targetNamespace"><option value="">请选择目标账户</option><option v-for="account in accounts" :key="account" :value="account">{{ account }}</option></select></label>
           <label>资源类型<select v-model="form.kind"><option value="csm">云主机</option><option value="dataDisk">独立数据盘</option></select></label>
           <label>购买方式<select v-model="form.action"><option value="buy">购买</option><option value="renew">续费</option><option value="expand">扩容</option></select></label>
           <label v-if="form.kind === 'csm' && form.action === 'buy'">名称<span class="purchase-generated-name">{{ form.name }}</span></label>
@@ -433,9 +473,11 @@ onUnmounted(() => { if (isMicroApp) window.$wujie?.bus?.$off?.('routeChange', on
           </div>
         </div>
         <div class="purchase-total"><span>总价</span><strong v-if="quoteAmountCents !== null">¥{{ (quoteAmountCents / 100).toFixed(2) }}</strong><span v-else>—</span></div>
+        <label v-if="form.action !== 'expand'" class="purchase-coupon">优惠码<input v-model.trim="form.couponCode" placeholder="请输入优惠码" autocomplete="off" /></label>
         <p v-if="quoteAmountCents !== null && purchaseCombination && purchaseCombination.discountNew < 100" class="hint" role="status">已计入组合优惠：{{ purchaseCombination.discountNew }}%（{{ purchaseCombination.discountNew / 10 }} 折）</p>
+        <p v-if="quoteAmountCents !== null && form.couponCode" class="hint" role="status">优惠码已计入总价。</p>
         <p v-if="quoteLoading" class="hint" role="status">正在报价…</p><p v-else-if="quoteError" class="alert" role="alert">{{ quoteError }}</p>
-        <div class="purchase-actions"><a-button type="primary" size="large" :disabled="quoteAmountCents === null || quoteLoading || (form.kind === 'csm' && form.action === 'buy' && !form.templateName)" @click="buy">{{ form.action === 'renew' ? '支付' : form.action === 'expand' ? '扩容' : '购买' }}</a-button></div>
+        <div class="purchase-actions"><a-button type="primary" size="large" :disabled="quoteAmountCents === null || quoteLoading || (founder && !targetNamespace) || (form.kind === 'csm' && form.action === 'buy' && !form.templateName)" @click="buy(false)">{{ form.action === 'renew' ? '支付' : form.action === 'expand' ? '扩容' : '购买' }}</a-button><a-button v-if="founder" size="large" :disabled="quoteAmountCents === null || quoteLoading || !targetNamespace || (form.kind === 'csm' && form.action === 'buy' && !form.templateName)" @click="buy(true)">创始人免费</a-button></div>
       </section>
       <section v-else-if="section === 'pricing'" class="panel form-panel">
         <p class="hint">设置各项资源的月单价；购买页按实际资源和时长向服务端获取报价。只有创始人可保存。</p>
@@ -450,6 +492,11 @@ onUnmounted(() => { if (isMicroApp) window.$wujie?.bus?.$off?.('routeChange', on
           <p v-else class="hint">暂无组合折扣。先添加一个周期，再设置该周期的资源配置。</p>
         </div>
         <button class="primary" @click="savePricing">保存费用配置</button>
+        <div v-if="founder" class="pricing-coupons">
+          <div class="panel-head"><strong>优惠码</strong></div>
+          <form class="grid" @submit.prevent="createCoupon"><label>优惠码<input v-model.trim="couponDraft.code" required minlength="4" maxlength="32" placeholder="例如 CSM-2026" /></label><label>资源类型<select v-model="couponDraft.kind"><option value="csm">云主机</option><option value="dataDisk">独立数据盘</option></select></label><label>订单类型<select v-model="couponDraft.action"><option value="buy">购买</option><option value="renew">续费</option></select></label><label>支付比例（%）<input v-model.number="couponDraft.discount" type="number" min="1" max="99" required /></label><label>有效期至<input v-model="couponDraft.expiresAt" type="datetime-local" required /></label><button class="primary">创建优惠码</button></form>
+          <div v-if="coupons.length" class="table-wrap coupon-list"><table><thead><tr><th>优惠码</th><th>适用订单</th><th>支付比例</th><th>有效期</th><th>状态</th></tr></thead><tbody><tr v-for="coupon in coupons" :key="coupon.code"><td class="mono">{{ coupon.code }}</td><td>{{ coupon.kind === 'csm' ? '云主机' : '数据盘' }} · {{ coupon.action === 'buy' ? '购买' : '续费' }}</td><td>{{ coupon.discount }}%</td><td>{{ dateText(coupon.expiresAt) }}</td><td>{{ coupon.status === 'used' ? '已使用' : coupon.status === 'locked' ? '锁定中' : new Date(coupon.expiresAt) <= new Date() ? '已过期' : '可使用' }}</td></tr></tbody></table></div>
+        </div>
       </section>
       <template v-if="section === 'templates'">
         <div class="tab-actions"><button v-if="templateTab === 'templates'" class="primary" @click="systemTemplatesComponent?.openCreate()">＋ 新建系统模板</button><button v-else class="primary" @click="openAppDrawer">＋ 新建初始化配置</button></div>
@@ -460,11 +507,12 @@ onUnmounted(() => { if (isMicroApp) window.$wujie?.bus?.$off?.('routeChange', on
       <a-drawer v-model:visible="appDrawerOpen" :title="draft.resourceVersion ? '编辑初始化配置' : '新建初始化配置'" width="min(560px, 100vw)" :footer="false" :unmount-on-close="true">
         <form @submit.prevent="saveConfig"><p v-if="appError" class="alert" role="alert">{{ appError }}</p><div class="grid"><label>名称<input v-model.trim="draft.name" required maxlength="63" placeholder="唯一名称" :readonly="!!draft.resourceVersion" /></label><label>合并顺序<input v-model.number="draft.order" type="number" required /></label><label v-if="draft.kind === 'shell'" class="script-field">Shell 脚本<textarea v-model="draft.shell" required rows="10" spellcheck="false" /></label><label v-else class="script-field">cloud-config YAML<textarea v-model="draft.cloudConfig" required rows="10" spellcheck="false" /></label></div><p v-if="draft.kind === 'cloud'" class="hint">以 #cloud-config 开头；同名字段以后项为准，列表按顺序追加，实际执行遵循 cloud-init 模块阶段。</p><div class="app-drawer-actions"><button type="button" class="light" @click="appDrawerOpen = false">取消</button><button class="primary" :disabled="appSaving">{{ appSaving ? '保存中…' : '保存配置' }}</button></div></form>
       </a-drawer>
+      <a-modal :visible="!!payment" title="支付" width="min(1000px, 100vw)" :footer="false" :mask-closable="false" @cancel="payment = null"><iframe v-if="paymentURL" :src="paymentURL" title="CSM 订单支付" class="payment-frame" /><div class="purchase-actions"><a-button type="primary" @click="refreshPayment">已支付，刷新状态</a-button><a-button @click="payment = null">稍后支付</a-button></div></a-modal>
       <UpgradeVersions v-if="section === 'versions'" :rows="rows" :loading="loading" @saved="load" />
       <section v-if="section === 'orders'" class="panel">
         <div class="panel-head order-panel-head"><form class="inline-form" @submit.prevent="appliedOrderSearch = orderSearch.trim()"><label class="order-search-field"><span>订单号</span><input v-model="orderSearch" placeholder="请输入订单号" /></label><button class="light">查询</button><button type="button" class="light" @click="orderSearch = ''; appliedOrderSearch = ''">重置</button></form><span>{{ loading ? '正在加载…' : `${rows.length} 条订单` }}</span></div>
         <div v-if="!loading && !filteredOrders.length" class="empty">暂无订单</div>
-        <div v-else class="table-wrap order-table"><table><thead><tr><th>订单号</th><th>关联资源</th><th>订单类型</th><th>资源配置</th><th>金额</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead><tbody><tr v-for="row in filteredOrders" :key="row.orderSn"><td class="mono">{{ row.orderSn }}</td><td><button class="text" @click="go(row.kind === 'dataDisk' ? 'disks' : 'hosts')">{{ row.name }}</button><small>{{ row.kind === 'dataDisk' ? '数据盘' : '云主机' }}</small></td><td>{{ ({ buy: '购买', renew: '续费', expand: '扩容' })[row.action] || row.action }}</td><td>{{ row.action === 'renew' ? `${row.quantity} ${periodUnits[row.unit] || row.unit}` : row.kind === 'dataDisk' ? `${row.storageGi} GiB` : `${row.cpu}核 / ${row.memoryGi} GiB / ${row.storageGi} GiB / ${row.bandwidthMbps} Mbps` }}</td><td>¥{{ (row.amountCents / 100).toFixed(2) }}</td><td><span class="status">{{ orderStatus(row) }}</span></td><td>{{ dateText(row.createdAt) }}</td><td class="actions"><a v-if="row.status === 'pending' && row.ticket" class="text" :href="`https://ip.w7.cc/pay/${encodeURIComponent(row.ticket)}?header=false&footer=false`" target="_blank" rel="noopener noreferrer">支付 ↗</a><button v-if="row.status === 'pending'" class="text" @click="refreshOrder(row)">刷新状态</button><span v-else>—</span></td></tr></tbody></table></div>
+        <div v-else class="table-wrap order-table"><table><thead><tr><th>订单号</th><th>关联资源</th><th>订单类型</th><th>资源配置</th><th>金额</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead><tbody><tr v-for="row in filteredOrders" :key="row.orderSn"><td class="mono">{{ row.orderSn }}</td><td><button class="text" @click="go(row.kind === 'dataDisk' ? 'disks' : 'hosts')">{{ row.name }}</button><small>{{ row.kind === 'dataDisk' ? '数据盘' : '云主机' }}</small></td><td>{{ ({ buy: '购买', renew: '续费', expand: '扩容' })[row.action] || row.action }}</td><td>{{ row.action === 'renew' ? `${row.quantity} ${periodUnits[row.unit] || row.unit}` : row.kind === 'dataDisk' ? `${row.storageGi} GiB` : `${row.cpu}核 / ${row.memoryGi} GiB / ${row.storageGi} GiB / ${row.bandwidthMbps} Mbps` }}</td><td>¥{{ (row.amountCents / 100).toFixed(2) }}</td><td><span class="status">{{ orderStatus(row) }}</span></td><td>{{ dateText(row.createdAt) }}</td><td class="actions"><button v-if="row.status === 'pending' && row.ticket" class="text" @click="payment = row">支付</button><button v-if="row.status === 'pending'" class="text" @click="refreshOrder(row)">刷新状态</button><span v-else>—</span></td></tr></tbody></table></div>
       </section>
       <section v-else-if="section === 'disks'" class="panel">
         <div class="panel-head"><button class="primary" @click="orderForDisk('buy')">＋ 购买数据盘</button><span>{{ loading ? '正在加载…' : `${diskRows.length} 块磁盘` }}</span></div>
@@ -644,8 +692,11 @@ input[type='checkbox'] { width: auto; min-height: 0; padding: 0; accent-color: r
 .purchase-custom label:last-child { width: 100px; }
 .purchase-total { align-items: center; margin-top: 8px; }
 .purchase-total strong { color: rgb(var(--orange-6, 255, 125, 0)); font-size: 20px; font-weight: 400; }
-.purchase-actions { display: flex; justify-content: center; margin-top: 40px; }
+.purchase-coupon { display: block; max-width: 320px; margin: 12px 10px; }
+.purchase-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; margin-top: 40px; }
 .purchase-actions .arco-btn { width: 160px; }
+.payment-frame { display: block; width: 100%; height: min(660px, 65vh); border: 0; }
+.pricing-coupons { max-width: 1100px; margin-top: 32px; }
 @media (max-width: 900px) {
   .purchase-periods .arco-btn-group { flex-wrap: wrap; gap: 8px; }
   .purchase-periods .arco-btn-group .arco-btn { border-radius: 2px; }
@@ -669,6 +720,7 @@ input[type='checkbox'] { width: auto; min-height: 0; padding: 0; accent-color: r
   .purchase-periods .arco-btn-group .arco-btn, .purchase-periods > .arco-btn { min-height: 44px; }
   .purchase-custom label:first-child { width: 150px; }
   .purchase-actions .arco-btn { min-height: 44px; }
+  .purchase-coupon { max-width: none; margin-inline: 0; }
 }
 @media (max-width: 600px) {
   .panel-head { flex-wrap: wrap; }

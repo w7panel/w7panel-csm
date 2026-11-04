@@ -45,6 +45,7 @@ var ErrPricingMissing = errors.New("pricing is not configured")
 type KubePricing struct {
 	Kube      kubernetes.Interface
 	Store     KubeStore
+	Coupons   *KubeCoupons
 	Namespace string
 	ProductID string
 	Now       func() time.Time
@@ -187,6 +188,16 @@ func (p KubePricing) Quote(ctx context.Context, r Request) (int64, string, url.V
 				break
 			}
 		}
+	}
+	if r.CouponCode != "" {
+		if p.Coupons == nil {
+			return 0, "", nil, ErrInvalid
+		}
+		coupon, err := p.Coupons.Check(ctx, r)
+		if err != nil {
+			return 0, "", nil, err
+		}
+		cents = cents/100*coupon.Discount + (cents%100*coupon.Discount+99)/100
 	}
 	params := url.Values{
 		"hour":      {strconv.FormatInt(hours, 10)},

@@ -103,6 +103,42 @@ func TestMockPaymentAppliesImmediately(t *testing.T) {
 		t.Fatalf("missing quote applied order: %v", err)
 	}
 }
+
+func TestFounderFreeOrderUsesZeroPriceAndConfirms(t *testing.T) {
+	store := &fakeStore{}
+	req := Request{Kind: "csm", Action: "buy", Namespace: "csm-alice", Name: "host", TemplateName: "ubuntu", CPU: 2, MemoryGi: 4, StorageGi: 40, BandwidthMbps: 5, Quantity: 1, Unit: "month", FounderFree: true}
+	quote := func(context.Context, Request) (int64, string, url.Values, error) {
+		return 1200, "", url.Values{"hour": {"720"}, "cpu": {"2"}, "memory": {"4"}, "storage": {"40"}, "bandwidth": {"5"}}, nil
+	}
+	svc := Service{Gateway: MockGateway{Quote: quote}, Store: store, AutoConfirm: true}
+	record, err := svc.Create(t.Context(), req)
+	if err != nil || record.AmountCents != 0 || record.Status != "paid" || store.applied != 1 {
+		t.Fatalf("free order = %+v, applied = %d, err = %v", record, store.applied, err)
+	}
+	if err := Validate(Request{FounderFree: true, CouponCode: "CSM-TEST"}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("free order with coupon: %v", err)
+	}
+}
+
+func TestW7FounderFreeSendsZeroPrice(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil || r.Form.Get("price") != "0" {
+			t.Errorf("free price: %v, %v", r.Form, err)
+		}
+		w.Write([]byte(`{"ipOrderSn":"SN-FREE","needPay":false}`))
+	}))
+	defer server.Close()
+	gateway := W7Gateway{Endpoint: server.URL, NotifyURL: "https://csm.example/csm-api/v1/order/notify", Credential: func(context.Context, string) (W7Credential, error) {
+		return W7Credential{Token: "token", Account: "alice"}, nil
+	}, Quote: func(context.Context, Request) (int64, string, url.Values, error) {
+		return 1200, "42", url.Values{"hour": {"720"}, "cpu": {"2"}, "memory": {"4"}, "storage": {"40"}, "bandwidth": {"5"}}, nil
+	}}
+	req := Request{Kind: "csm", Action: "buy", Namespace: "csm-alice", Name: "host", TemplateName: "ubuntu", CPU: 2, MemoryGi: 4, StorageGi: 40, BandwidthMbps: 5, Quantity: 1, Unit: "month", FounderFree: true}
+	result, err := gateway.Create(t.Context(), req)
+	if err != nil || result.AmountCents != 0 || result.NeedPay {
+		t.Fatalf("free W7 order = %+v, %v", result, err)
+	}
+}
 func TestApplySpecExpansionAndRenewal(t *testing.T) {
 	spec := map[string]any{"paid": true, "cpu": "2", "memory": "4Gi", "systemDiskGi": int64(40), "bandwidthMbps": int64(5), "expireTime": "2030-01-01T00:00:00Z"}
 	if err := applySpec(spec, Record{Request: Request{Kind: "csm", Action: "expand", CPU: 1, MemoryGi: 4, StorageGi: 40, BandwidthMbps: 5}}); !errors.Is(err, ErrInvalid) {

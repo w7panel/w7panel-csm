@@ -25,6 +25,9 @@ func (g MockGateway) Create(ctx context.Context, r Request) (Payment, error) {
 	if cents < 0 {
 		return Payment{}, ErrInvalid
 	}
+	if r.FounderFree {
+		cents = 0
+	}
 	terms, err := termsFromParams(params)
 	if err != nil {
 		return Payment{}, err

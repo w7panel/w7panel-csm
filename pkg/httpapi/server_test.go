@@ -76,6 +76,54 @@ func TestPricingFounderGuardAndQuote(t *testing.T) {
 	}
 }
 
+func TestOrderTargetAndFreeRequireFounder(t *testing.T) {
+	kube := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/namespaces" {
+			w.Write([]byte(`{"items":[{"metadata":{"name":"csm-bob"}},{"metadata":{"name":"default"}}]}`))
+			return
+		}
+		if r.URL.Path == "/api/v1/namespaces/csm-bob" {
+			w.Write([]byte(`{"metadata":{"name":"csm-bob"}}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer kube.Close()
+	server := NewServer(func(_ context.Context, token string) (Identity, error) {
+		return Identity{Namespace: "csm-alice", Founder: token == "founder"}, nil
+	}, &backendStub{}, order.Service{Gateway: gatewayStub{}, Store: storeStub{}}, "")
+	server.Pricing = &pricingStub{saved: &order.Prices{CPUCents: 100}}
+	server.KubeURL, server.KubeToken = kube.URL, "test"
+	call := func(path, token, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		server.Handler().ServeHTTP(w, req)
+		return w
+	}
+	for _, tc := range []struct {
+		path, token, body string
+		want              int
+	}{
+		{Prefix + "/orders/quote?namespace=csm-bob", "tenant", `{"kind":"csm","action":"buy","name":"host","cpu":2}`, 403},
+		{Prefix + "/orders/quote", "tenant", `{"kind":"csm","action":"buy","name":"host","cpu":2,"founderFree":true}`, 403},
+		{Prefix + "/orders", "tenant", `{"kind":"csm","action":"buy","name":"host","founderFree":true}`, 403},
+		{Prefix + "/orders/quote?namespace=csm-bob", "founder", `{"kind":"csm","action":"buy","name":"host","cpu":2}`, 200},
+		{Prefix + "/orders/quote?namespace=csm-missing", "founder", `{"kind":"csm","action":"buy","name":"host","cpu":2}`, 404},
+	} {
+		if w := call(tc.path, tc.token, tc.body); w.Code != tc.want {
+			t.Fatalf("%s %s: %d %s", tc.token, tc.path, w.Code, w.Body.String())
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, Prefix+"/accounts", nil)
+	req.Header.Set("Authorization", "Bearer founder")
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "csm-bob") || strings.Contains(w.Body.String(), "default") {
+		t.Fatalf("accounts: %d %s", w.Code, w.Body.String())
+	}
+}
+
 func TestRedactInitializationConfigs(t *testing.T) {
 	data, err := redactInitializationConfigs(json.RawMessage(`{"metadata":{"resourceVersion":"1"},"items":[{"metadata":{"name":"cfg"},"spec":{"shell":"echo secret-shell","cloudConfig":"#cloud-config\npassword: secret-cloud","order":2}}]}`))
 	if err != nil {

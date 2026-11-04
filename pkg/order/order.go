@@ -22,6 +22,8 @@ type Request struct {
 	BandwidthMbps int64  `json:"bandwidthMbps,omitempty"`
 	Quantity      int64  `json:"quantity,omitempty"`
 	Unit          string `json:"unit,omitempty"`
+	CouponCode    string `json:"couponCode,omitempty"`
+	FounderFree   bool   `json:"founderFree,omitempty"`
 }
 
 type Payment struct {
@@ -69,8 +71,13 @@ type Store interface {
 }
 
 type Service struct {
-	Gateway     Gateway
-	Store       Store
+	Gateway Gateway
+	Store   Store
+	Coupons interface {
+		Lock(context.Context, Request, string) error
+		Use(context.Context, string, string) error
+		Unlock(context.Context, string, string) error
+	}
 	AutoConfirm bool
 }
 
@@ -91,17 +98,54 @@ func (s Service) Create(ctx context.Context, req Request) (Record, error) {
 	if payment.OrderSn == "" || payment.AmountCents < 0 {
 		return Record{}, fmt.Errorf("%w: invalid gateway response", ErrInvalid)
 	}
+	if req.CouponCode != "" {
+		if s.Coupons == nil {
+			return Record{}, errors.New("coupons are not configured")
+		}
+		if err := s.Coupons.Lock(ctx, req, payment.OrderSn); err != nil {
+			return Record{}, err
+		}
+	}
 	record := Record{Request: req, Payment: payment, Status: "pending", CreatedAt: time.Now().UTC()}
 	if err := s.Store.SavePending(ctx, record); err != nil {
+		if req.CouponCode != "" {
+			releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = s.Coupons.Unlock(releaseCtx, req.CouponCode, payment.OrderSn)
+		}
 		return Record{}, err
 	}
-	if s.AutoConfirm {
-		return s.Refresh(ctx, req.Namespace, payment.OrderSn)
+	if req.CouponCode != "" {
+		if err := s.Coupons.Use(ctx, req.CouponCode, payment.OrderSn); err != nil {
+			// shortcut: a saved order keeps its coupon locked if final marking fails; retry on payment refresh.
+			return record, nil
+		}
+	}
+	if s.AutoConfirm || !payment.NeedPay && payment.AmountCents == 0 {
+		confirmed, err := s.Refresh(ctx, req.Namespace, payment.OrderSn)
+		if errors.Is(err, ErrUnconfirmed) {
+			if !payment.NeedPay {
+				// shortcut: free orders get one delayed confirmation; a restart relies on the callback or manual refresh.
+				time.AfterFunc(2*time.Second, func() {
+					checkCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer cancel()
+					_, _ = s.Refresh(checkCtx, req.Namespace, payment.OrderSn)
+				})
+			}
+			return record, nil
+		}
+		return confirmed, err
 	}
 	return record, nil
 }
 
 func Validate(r Request) error {
+	if r.FounderFree && r.CouponCode != "" {
+		return ErrInvalid
+	}
+	if r.CouponCode != "" && !validCouponCode(r.CouponCode) {
+		return ErrInvalid
+	}
 	if r.Namespace == "" || r.Name == "" || !dnsName(r.Name) || !dnsName(r.Namespace) {
 		return ErrInvalid
 	}
@@ -175,6 +219,9 @@ func (s Service) Refresh(ctx context.Context, namespace, sn string) (Record, err
 	}
 	if !status.Paid {
 		return record, ErrUnconfirmed
+	}
+	if record.CouponCode != "" && s.Coupons != nil {
+		_ = s.Coupons.Use(ctx, record.CouponCode, record.OrderSn)
 	}
 	return s.Store.ApplyPaid(ctx, record)
 }

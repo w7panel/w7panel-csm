@@ -92,6 +92,9 @@ func (g W7Gateway) Create(ctx context.Context, r Request) (Payment, error) {
 	if cents < 0 || productID == "" {
 		return Payment{}, ErrInvalid
 	}
+	if r.FounderFree {
+		cents = 0
+	}
 	if params == nil {
 		params = url.Values{}
 	}
@@ -104,6 +107,9 @@ func (g W7Gateway) Create(ctx context.Context, r Request) (Payment, error) {
 	params.Set("ckm_name", r.Name)
 	params.Set("buymode", map[string]string{"buy": "base", "renew": "renew", "expand": "expand"}[r.Action])
 	params.Set("price", strconv.FormatInt(cents/100, 10)+"."+fmt.Sprintf("%02d", cents%100))
+	if r.FounderFree {
+		params.Set("price", "0")
+	}
 	if r.Quantity > 0 {
 		hours := int64(720)
 		if r.Unit == "day" {
