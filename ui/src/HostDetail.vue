@@ -38,7 +38,7 @@ function addJumpKey() {
   <div class="host-detail-page">
     <section class="host-heading">
       <div class="host-heading-main">
-        <span class="status">{{ display(host.status?.phase) }}</span>
+        <strong class="host-name">{{ name(host) }}</strong><span class="status">{{ display(host.status?.phase) }}</span>
         <p>{{ host.metadata?.namespace || '默认命名空间' }} <span v-if="host.status?.message">· {{ host.status.message }}</span></p>
       </div>
       <div class="host-heading-actions"><button class="light" :disabled="loading" @click="emit('refresh')">{{ loading ? '刷新中…' : '刷新状态' }}</button><button class="primary" @click="emit('terminal')">打开终端</button></div>
@@ -59,6 +59,7 @@ function addJumpKey() {
       <section class="host-section" aria-labelledby="host-connect-heading">
         <h2 id="host-connect-heading">连接与公钥</h2>
         <dl class="host-facts"><div><dt>主机标识</dt><dd class="mono">{{ display(host.status?.sshHost) }}</dd></div><div><dt>网关地址</dt><dd class="mono">{{ sshHost || '—' }}</dd></div><div><dt>SSH 端口</dt><dd>{{ display(host.status?.sshPort) }}</dd></div></dl>
+        <details class="host-connection-guide"><summary>SSH 连接设置</summary>
         <template v-if="host.status?.sshHost">
           <p class="host-section-note">1. 在自己的电脑上准备 SSH 密钥；已有 ~/.ssh/csm-218 时跳过生成，避免覆盖私钥。</p>
           <pre class="host-command mono">ssh-keygen -t ed25519 -f ~/.ssh/csm-218 -C csm-218
@@ -80,6 +81,7 @@ cat ~/.ssh/csm-218.pub</pre>
           <p v-if="sshHost && host.status?.sshPort" class="host-command mono">ssh -p {{ host.status.sshPort }} root@{{ sshHost }}</p>
           <form class="host-key-form" @submit.prevent="addKey"><label>SSH 登录公钥<textarea v-model="publicKey" required rows="3" placeholder="粘贴 ssh-ed25519 公钥" /></label><button class="light" :disabled="loading || !publicKey.trim()">添加登录公钥</button></form>
         </template>
+        </details>
       </section>
       <section class="host-section" aria-labelledby="host-operation-heading">
         <h2 id="host-operation-heading">主机操作</h2>
@@ -92,10 +94,10 @@ cat ~/.ssh/csm-218.pub</pre>
 </template>
 
 <style scoped>
-.host-detail-page{width:100%;margin-bottom:24px}.host-detail-page button,.host-detail-page select{min-height:44px}.host-heading{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;padding:8px 0 24px;border-bottom:1px solid var(--color-border-2,#e5e6eb)}
-.host-heading p{margin:8px 0 0;color:var(--color-text-2,#4e5969);overflow-wrap:anywhere}.host-heading-actions{display:flex;gap:8px;flex-wrap:wrap}
-.host-section{min-width:0;margin-top:22px;padding:20px;background:var(--color-bg-2,#fff)}.host-section h2{margin-bottom:18px}.host-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.host-metrics>div{min-width:0;padding:16px;background:var(--color-fill-2,#f2f3f5)}.host-metrics span{display:block;color:var(--color-text-2,#4e5969)}.host-metrics strong{display:block;margin-top:8px;font-size:22px;overflow-wrap:anywhere}.host-metrics small{font-size:13px;font-weight:400}.host-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 24px;margin:16px 0 0}.host-facts>div{display:grid;grid-template-columns:110px minmax(0,1fr);gap:12px;padding:12px 0;border-bottom:1px solid var(--color-border-2,#e5e6eb)}.host-facts dt{color:var(--color-text-2,#4e5969)}.host-facts dd{min-width:0;margin:0;overflow-wrap:anywhere}
-.host-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.host-command{margin:16px 0;padding:12px;background:var(--color-fill-2,#f2f3f5);white-space:pre-wrap;overflow-wrap:anywhere}.host-key-form{margin-top:20px}.host-key-form button{margin-top:12px}.host-section-note{color:var(--color-text-2,#4e5969)}.host-upgrade{display:flex;align-items:end;gap:12px;margin-top:24px}.host-upgrade label{flex:1;min-width:0}.host-upgrade button{flex:none}
-@media(max-width:800px){.host-columns{grid-template-columns:1fr}.host-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:600px){.host-heading{align-items:stretch;flex-direction:column}.host-heading-actions>*{flex:1}.host-section{padding:16px}.host-facts{grid-template-columns:1fr}.host-facts>div{grid-template-columns:100px minmax(0,1fr)}.host-upgrade{align-items:stretch;flex-direction:column}.host-upgrade button{align-self:flex-start}}
+.host-detail-page{width:100%;margin-bottom:24px}.host-detail-page button,.host-detail-page select{min-height:32px}.host-heading{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:16px}
+.host-name{margin-right:10px;font-size:20px;overflow-wrap:anywhere}.host-heading p{margin:4px 0 0;color:var(--color-text-2,#4e5969);overflow-wrap:anywhere}.host-heading-actions{display:flex;gap:8px;flex-wrap:wrap}
+.host-section{min-width:0;margin-bottom:16px;padding:20px;background:var(--color-bg-2,#fff)}.host-section h2{margin-bottom:12px}.host-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.host-metrics>div{min-width:0;padding:4px 0}.host-metrics span{display:block;color:var(--color-text-2,#4e5969)}.host-metrics strong{display:block;margin-top:6px;font-size:18px;overflow-wrap:anywhere}.host-metrics small{font-size:13px;font-weight:400}.host-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 24px;margin:16px 0 0}.host-facts>div{display:grid;grid-template-columns:110px minmax(0,1fr);gap:12px;padding:12px 0;border-bottom:1px solid var(--color-border-2,#e5e6eb)}.host-facts dt{color:var(--color-text-2,#4e5969)}.host-facts dd{min-width:0;margin:0;overflow-wrap:anywhere}
+.host-columns{display:block}.host-connection-guide{margin-top:16px}.host-connection-guide summary{cursor:pointer;color:rgb(var(--primary-6,22,93,255))}.host-command{max-width:900px;margin:16px 0;padding:12px;background:var(--color-fill-2,#f2f3f5);white-space:pre-wrap;overflow-wrap:anywhere}.host-key-form{max-width:720px;margin-top:20px}.host-key-form button{margin-top:12px}.host-section-note{color:var(--color-text-2,#4e5969)}.host-upgrade{display:flex;align-items:end;gap:12px;max-width:560px;margin-top:24px}.host-upgrade label{flex:1;min-width:0}.host-upgrade button{flex:none}
+@media(max-width:800px){.host-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.host-heading{align-items:stretch;flex-direction:column}.host-heading-actions>*{flex:1}.host-detail-page button,.host-detail-page select{min-height:44px}.host-section{padding:16px}.host-facts{grid-template-columns:1fr}.host-facts>div{grid-template-columns:100px minmax(0,1fr)}.host-upgrade{align-items:stretch;flex-direction:column}.host-upgrade button{align-self:flex-start}}
 </style>

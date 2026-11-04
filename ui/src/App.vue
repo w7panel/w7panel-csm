@@ -449,7 +449,7 @@ onUnmounted(() => { window.removeEventListener('message', onPaymentMessage); if 
     </a-drawer>
     <main>
       <header class="page-header">
-        <div class="page-heading"><a-breadcrumb class="breadcrumb"><a-breadcrumb-item><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">资源管理</a></a-breadcrumb-item><a-breadcrumb-item v-if="hostRouteName"><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">主机</a></a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage"><a :href="router.resolve({ name: 'host', params: { name: hostRouteName }, query: route.query }).href" @click.prevent="router.push({ name: 'host', params: { name: hostRouteName }, query: route.query })">{{ hostRouteName }}</a></a-breadcrumb-item><a-breadcrumb-item v-else>{{ hostRouteName || title }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb></div>
+        <div class="page-heading"><a-breadcrumb class="breadcrumb"><a-breadcrumb-item><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">资源管理</a></a-breadcrumb-item><a-breadcrumb-item v-if="hostRouteName"><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">主机</a></a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage"><a :href="router.resolve({ name: 'host', params: { name: hostRouteName }, query: route.query }).href" @click.prevent="router.push({ name: 'host', params: { name: hostRouteName }, query: route.query })">{{ hostRouteName }}</a></a-breadcrumb-item><a-breadcrumb-item v-else>{{ hostRouteName ? '主机详情' : title }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb></div>
         <div v-if="!hostRouteName && loggedIn && section !== 'purchase'" class="page-actions-row"><a-button @click="load">刷新</a-button></div>
       </header>
       <p v-if="error" class="alert" role="alert">{{ error }}</p><p v-if="notice" class="notice" role="status">{{ notice }} <a v-if="payment?.ticket" :href="paymentURL" target="_blank" rel="noopener noreferrer">打开支付页面 ↗</a></p>
@@ -538,10 +538,17 @@ onUnmounted(() => { window.removeEventListener('message', onPaymentMessage); if 
         <div v-else class="table-wrap disk-table"><table><thead><tr><th>PVC / 类型</th><th>所属主机</th><th>容量</th><th>到期时间</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in diskRows" :key="`${row.systemHost ? 'system' : 'data'}:${row.metadata?.namespace || ''}:${nameOf(row)}`"><td><strong>{{ row.status?.pvcName || 'PVC 待创建' }}</strong><small>{{ row.systemHost ? '系统盘' : '数据盘' }} · {{ nameOf(row) }}</small></td><td>{{ row.spec?.attached ? row.spec?.csmName : '未挂载' }}</td><td>{{ row.spec?.storageGi || 0 }} GiB</td><td>{{ dateText(row.spec?.expireTime) }}</td><td><span class="status">{{ row.systemHost ? phaseOf(row.systemHost) : diskStatus(row) }}</span></td><td class="actions"><button v-if="row.systemHost" class="text" @click="openHost(row.systemHost)">主机详情</button><template v-else><button class="text" @click="detail('data-disks', row)">详情</button><button v-if="row.spec?.paid && !row.spec?.attached && row.status?.phase === 'Available'" class="text" @click="detail('data-disks', row)">挂载</button><button v-if="row.spec?.attached" class="text" @click="detail('data-disks', row)">卸载</button><button v-if="row.spec?.paid" class="text" @click="orderForDisk('renew', row)">续费</button><button v-if="row.spec?.paid" class="text" @click="orderForDisk('expand', row)">扩容</button><button v-if="!row.spec?.attached" class="text danger" @click="deleteDisk(row)">删除</button></template></td></tr></tbody></table></div>
       </section>
       <section v-else-if="section === 'hosts' && !hostRouteName" class="panel">
-        <div class="panel-head host-toolbar"><button class="primary" @click="openCsmPurchase">＋ 购买资源</button><div class="host-filters"><label>用户名<input v-model.trim="hostUsernameSearch" type="search" placeholder="搜索用户名" /></label><label>主机状态<select v-model="hostPhaseSearch"><option value="">全部状态</option><option value="PendingPayment">待支付</option><option value="Provisioning">创建中</option><option value="Ready">运行中</option><option value="Expired">已过期</option><option value="Recycled">已回收</option><option value="Failed">故障中</option></select></label></div><span class="host-count">{{ loading ? '正在加载…' : `${filteredHosts.length} / ${rows.length} 台主机` }}</span></div>
+        <div class="panel-head host-toolbar">
+          <a-button type="primary" @click="openCsmPurchase">＋ 购买资源</a-button>
+          <a-form layout="inline" class="host-filters" @submit.prevent>
+            <a-form-item label="用户名"><a-input v-model="hostUsernameSearch" placeholder="搜索用户名" /></a-form-item>
+            <a-form-item label="主机状态"><a-select v-model="hostPhaseSearch"><a-option value="">全部状态</a-option><a-option value="PendingPayment">待支付</a-option><a-option value="Provisioning">创建中</a-option><a-option value="Ready">运行中</a-option><a-option value="Expired">已过期</a-option><a-option value="Recycled">已回收</a-option><a-option value="Failed">故障中</a-option></a-select></a-form-item>
+          </a-form>
+          <span class="host-count">{{ loading ? '正在加载…' : `${filteredHosts.length} / ${rows.length} 台主机` }}</span>
+        </div>
         <div v-if="!loading && !rows.length" class="empty">暂无记录。可从购买页面创建第一台主机。</div>
         <div v-else-if="!loading && !filteredHosts.length" class="empty">没有符合筛选条件的主机。</div>
-        <div v-else class="table-wrap host-table"><table><thead><tr><th>主机名称</th><th>用户名</th><th>系统模板</th><th>CPU</th><th>内存</th><th>系统盘</th><th>带宽</th><th>过期时间</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in filteredHosts" :key="`${row.metadata?.namespace}/${nameOf(row)}`"><td><a class="table-link mono" :href="router.resolve({ name: 'host', params: { name: nameOf(row) }, query: { namespace: row.metadata?.namespace } }).href" @click.prevent="openHost(row)">{{ nameOf(row) }}</a></td><td>{{ hostUsername(row) }}</td><td>{{ row.spec?.templateName || '—' }}</td><td>{{ row.spec?.cpu == null ? '—' : `${row.spec.cpu} 核` }}</td><td>{{ row.spec?.memory || '—' }}</td><td>{{ row.spec?.systemDiskGi == null ? '—' : `${row.spec.systemDiskGi} GiB` }}</td><td>{{ row.spec?.bandwidthMbps == null ? '—' : `${row.spec.bandwidthMbps} Mbps` }}</td><td>{{ hostExpiryText(row.spec?.expireTime) }}</td><td class="host-phase"><span class="status">{{ phaseOf(row) }}</span></td><td class="actions"><button v-if="row.status?.initMode !== 'cloudInit'" class="text" @click="run(hostPath(nameOf(row), '/preinstall', row.metadata?.namespace))">预装</button><button class="text" @click="openHost(row)">详情</button></td></tr></tbody></table></div>
+        <div v-else class="table-wrap host-table"><table><thead><tr><th>主机名称</th><th>用户名</th><th>系统模板</th><th>资源配置</th><th>过期时间</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in filteredHosts" :key="`${row.metadata?.namespace}/${nameOf(row)}`"><td><a class="table-link mono" :href="router.resolve({ name: 'host', params: { name: nameOf(row) }, query: { namespace: row.metadata?.namespace } }).href" @click.prevent="openHost(row)">{{ nameOf(row) }}</a></td><td>{{ hostUsername(row) }}</td><td>{{ row.spec?.templateName || '—' }}</td><td>{{ row.spec?.cpu == null ? '—' : `${row.spec.cpu}核` }} / {{ row.spec?.memory || '—' }} / {{ row.spec?.systemDiskGi == null ? '—' : `${row.spec.systemDiskGi} GiB` }} / {{ row.spec?.bandwidthMbps == null ? '—' : `${row.spec.bandwidthMbps} Mbps` }}</td><td>{{ hostExpiryText(row.spec?.expireTime) }}</td><td class="host-phase"><span class="status">{{ phaseOf(row) }}</span></td><td class="actions"><button v-if="row.status?.initMode !== 'cloudInit'" class="text" @click="run(hostPath(nameOf(row), '/preinstall', row.metadata?.namespace))">预装</button><button class="text" @click="openHost(row)">详情</button></td></tr></tbody></table></div>
       </section>
       <section v-else-if="!hostRouteName && !['purchase', 'pricing', 'templates', 'versions', 'hosts'].includes(section)" class="panel">
         <div class="panel-head"><span>{{ loading ? '正在加载…' : `${rows.length} 条记录` }}</span></div>
@@ -583,15 +590,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .app-menu .arco-menu-item { height: 40px; margin: 2px 0; border-radius: 4px; }
 .app-menu .arco-menu-item.arco-menu-selected { background: var(--color-primary-light-1, #e8f3ff); color: rgb(var(--primary-6, 22, 93, 255)); font-weight: 600; }
 .mobile-menu-trigger { display: none; }
-main { grid-column: 2; grid-row: 2; min-width: 0; padding: 12px 24px 24px; }
+main { grid-column: 2; grid-row: 2; min-width: 0; padding: 20px; }
 .shell--micro { display: block; background: #fff; }
-.shell--micro main { min-height: 100vh; padding: 12px 20px 20px; }
-.page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.shell--micro main { min-height: 100vh; padding: 20px; }
+.page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .page-heading { min-width: 0; }
 .page-header .breadcrumb { min-width: 0; overflow-wrap: anywhere; }
 .page-actions-row { display: flex; align-items: center; gap: 8px; margin-left: auto; padding-bottom: 2px; }
 h2 { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
-.panel { min-width: 0; margin-bottom: 20px; padding: 20px; border-radius: 4px; background: var(--color-bg-2, #fff); }
+.panel { min-width: 0; margin-bottom: 20px; padding: 0 0 20px; border-radius: 4px; background: var(--color-bg-2, #fff); }
 .panel-head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 12px; color: var(--color-text-3, #86909c); font-size: 13px; }
 .light, .primary { min-height: 32px; padding: 0 15px; border: 1px solid var(--color-border-2, #e5e6eb); border-radius: 2px; background: var(--color-fill-2, #f2f3f5); color: var(--color-text-1, #1d2129); }
 .light:hover { background: var(--color-fill-3, #e5e6eb); }
@@ -612,7 +619,7 @@ input, select, textarea { width: 100%; min-width: 0; min-height: 32px; padding: 
 input:hover, select:hover, textarea:hover { background: var(--color-fill-3, #e5e6eb); }
 input:focus, select:focus, textarea:focus { border-color: rgb(var(--primary-6, 22, 93, 255)); background: var(--color-bg-2, #fff); }
 textarea { min-height: 90px; resize: vertical; }
-.form-panel { padding: 20px; }
+.form-panel { padding: 0 0 20px; }
 .pricing-combinations { max-width: 1100px; margin-bottom: 20px; }
 .pricing-period-create { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
 .pricing-period-create label { width: 120px; }
@@ -628,11 +635,12 @@ textarea { min-height: 90px; resize: vertical; }
 .quote strong { margin-left: 8px; color: var(--color-text-1, #1d2129); font-size: 20px; }
 .table-wrap { max-width: 100%; overflow-x: auto; }
 .table-wrap .arco-table { min-width: 560px; }
-.host-toolbar { justify-content: flex-start; gap: 12px; }
-.host-filters { display: flex; flex: 1; flex-wrap: wrap; align-items: end; gap: 12px; min-width: 0; }
-.host-filters label { width: min(180px, 100%); }
-.host-count { margin-left: auto; white-space: nowrap; }
-.host-table table { min-width: 1080px; }
+.host-toolbar { gap: 12px; }
+.host-filters { display: flex; flex-wrap: wrap; gap: 12px; width: fit-content; max-width: 100%; min-width: 0; margin-left: auto; }
+.host-filters .arco-form-item { margin: 0; }
+.host-filters .arco-input-wrapper, .host-filters .arco-select { width: 160px; }
+.host-count { white-space: nowrap; }
+.host-table table { min-width: 820px; }
 .host-table td { white-space: nowrap; }
 .host-cell-label { display: none; }
 .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
@@ -656,9 +664,9 @@ textarea { min-height: 90px; resize: vertical; }
   .topbar { height: 60px; padding: 0 16px; }
   .topbar-context { display: none; }
   .mobile-menu-trigger { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; margin-left: -8px; padding: 0; border: 0; background: transparent; color: var(--color-text-1, #1d2129); font-size: 20px; }
-  main { min-height: calc(100vh - 60px); padding: 8px 16px 16px; }
-  .shell--micro main { min-height: 100vh; padding: 8px 16px 16px; }
-  .panel { padding: 16px; }
+  main { min-height: calc(100vh - 60px); padding: 16px; }
+  .shell--micro main { min-height: 100vh; padding: 16px; }
+  .panel { padding: 0 0 16px; }
   .grid { grid-template-columns: 1fr; }
   .page-actions-row > * { min-height: 44px; }
   .page-header { flex-wrap: wrap; }
@@ -780,18 +788,17 @@ input[type='checkbox'] { width: auto; min-height: 0; padding: 0; accent-color: r
   .version-page td:nth-child(2)::before { content: '版本号'; }
   .version-page td:nth-child(3)::before { content: '目标模板'; }
   .host-toolbar { align-items: center; }
-  .host-filters { display: grid; flex-basis: 100%; grid-template-columns: minmax(0, 1fr); order: 1; }
-  .host-filters label { width: 100%; }
+  .host-filters { display: grid; flex-basis: 100%; grid-template-columns: minmax(0, 1fr); order: 1; width: 100%; margin-left: 0; }
+  .host-count { margin-left: auto; }
+  .host-filters .arco-form-item-content { min-width: 0; }
+  .host-filters .arco-input-wrapper, .host-filters .arco-select { width: 100%; }
   .host-table td:first-child { grid-column: 1; grid-row: 1; font-size: 16px; font-weight: 600; }
   .host-table td.host-phase { grid-column: 2; grid-row: 1; text-align: right; }
-  .host-table td:nth-child(2), .host-table td:nth-child(3) { grid-column: 1 / -1; }
+  .host-table td:nth-child(2), .host-table td:nth-child(3), .host-table td:nth-child(4) { grid-column: 1 / -1; }
   .host-table td:nth-child(2)::before { content: '用户名'; }
   .host-table td:nth-child(3)::before { content: '系统模板'; }
-  .host-table td:nth-child(4)::before { content: 'CPU'; }
-  .host-table td:nth-child(5)::before { content: '内存'; }
-  .host-table td:nth-child(6)::before { content: '系统盘'; }
-  .host-table td:nth-child(7)::before { content: '带宽'; }
-  .host-table td:nth-child(8)::before { content: '过期时间'; }
+  .host-table td:nth-child(4)::before { content: '资源配置（CPU / 内存 / 系统盘 / 带宽）'; }
+  .host-table td:nth-child(5)::before { content: '过期时间'; }
   .host-cell-label { display: block; margin-bottom: 3px; color: var(--color-text-3, #86909c); font-size: 12px; font-weight: 400; }
 }
 </style>
