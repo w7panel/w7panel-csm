@@ -38,13 +38,15 @@ const filteredHosts = computed(() => filterHosts(rows.value, hostUsernameSearch.
 const selected = ref(null)
 const templates = ref([])
 const appRows = ref([])
-const form = ref({ kind: 'csm', action: 'buy', name: '', templateName: '', cpu: 2, memoryGi: 4, storageGi: 40, bandwidthMbps: 5, quantity: 1, unit: 'month' })
+function newCsmName() { return `csm-${Math.floor(Math.random() * 100000).toString().padStart(5, '0')}` }
+function newCsmOrder() { return { kind: 'csm', action: 'buy', name: newCsmName(), templateName: '', cpu: 2, memoryGi: 4, storageGi: 40, bandwidthMbps: 5, quantity: 1, unit: 'month' } }
+const form = ref(newCsmOrder())
 const purchasePrices = ref(null)
 const purchaseResources = [
-  { field: 'cpu', label: 'CPU', unit: '核', price: 'cpuCents', max: 64 },
-  { field: 'memoryGi', label: '内存', unit: 'GiB', price: 'memoryGiCents', max: 256 },
-  { field: 'storageGi', label: '存储', unit: 'GiB', price: 'storageGiCents', max: 2048 },
-  { field: 'bandwidthMbps', label: '带宽', unit: 'Mbps', price: 'bandwidthMbpsCents', max: 1000 },
+  { field: 'cpu', label: 'CPU', unit: '核', price: 'cpuCents', max: 16, marks: { 1: '1', 4: '4', 8: '8', 12: '12', 16: '16' } },
+  { field: 'memoryGi', label: '内存', unit: 'GiB', price: 'memoryGiCents', max: 64, marks: { 1: '1', 16: '16', 32: '32', 48: '48', 64: '64' } },
+  { field: 'storageGi', label: '存储', unit: 'GiB', price: 'storageGiCents', max: 2048, marks: { 1: '1', 512: '512', 1024: '1024', 1536: '1536', 2048: '2048' } },
+  { field: 'bandwidthMbps', label: '带宽', unit: 'Mbps', price: 'bandwidthMbpsCents', max: 2000, marks: { 1: '1', 400: '400', 800: '800', 1200: '1200', 1600: '1600', 2000: '2000' } },
 ]
 const visiblePurchaseResources = computed(() => purchaseResources.filter(item => form.value.kind === 'csm' || item.field === 'storageGi'))
 const quickPurchaseOptions = computed(() => purchasePrices.value?.combinations || [])
@@ -140,6 +142,7 @@ async function login() {
   finally { loginPending.value = false }
 }
 function go(id) { notice.value = ''; payment.value = null; selected.value = null; terminalOpen.value = false; mobileMenuOpen.value = false; router.push({ name: id }) }
+function openCsmPurchase() { form.value = newCsmOrder(); go('purchase') }
 function orderForDisk(action, disk) {
   form.value = { kind: 'dataDisk', action, name: disk?.metadata?.name || '', templateName: '', cpu: 0, memoryGi: 0, storageGi: action === 'expand' ? Number(disk.spec?.storageGi || 0) + 10 : action === 'buy' ? 10 : 0, bandwidthMbps: 0, quantity: 1, unit: 'month' }
   go('purchase')
@@ -346,6 +349,11 @@ function phaseOf(row) { return row.status?.phase || row.status || row.spec?.orde
 watch(section, load)
 watch(() => route.fullPath, syncRoute)
 watch(form, scheduleQuote, { deep: true })
+watch(() => [form.value.kind, form.value.action], ([kind, action], [oldKind, oldAction]) => {
+  if (kind === 'csm' && action === 'buy' && !/^csm-\d{5}$/.test(form.value.name)) form.value.name = newCsmName()
+  else if (kind === 'csm' && oldKind === 'csm' && oldAction === 'buy' && action !== 'buy') form.value.name = ''
+  else if (kind === 'dataDisk' && oldKind === 'csm' && action === 'buy') form.value.name = ''
+})
 watch(() => form.value.kind, kind => {
   if (kind === 'csm') {
     if (!form.value.cpu) form.value.cpu = 2
@@ -384,50 +392,50 @@ onUnmounted(() => { if (isMicroApp) window.$wujie?.bus?.$off?.('routeChange', on
     </a-drawer>
     <main>
       <header class="page-header">
-        <div class="page-heading"><a-breadcrumb class="breadcrumb"><a-breadcrumb-item><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">资源管理</a></a-breadcrumb-item><a-breadcrumb-item v-if="hostRouteName"><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">主机</a></a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage"><a :href="router.resolve({ name: 'host', params: { name: hostRouteName }, query: route.query }).href" @click.prevent="router.push({ name: 'host', params: { name: hostRouteName }, query: route.query })">{{ hostRouteName }}</a></a-breadcrumb-item><a-breadcrumb-item v-else>{{ hostRouteName || title }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb><h1 v-if="!hostRouteName || terminalPage">{{ terminalPage ? '终端' : title }}</h1></div>
-        <div v-if="!hostRouteName && loggedIn" class="page-actions-row"><a-button @click="load">刷新</a-button></div>
+        <div class="page-heading"><a-breadcrumb class="breadcrumb"><a-breadcrumb-item><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">资源管理</a></a-breadcrumb-item><a-breadcrumb-item v-if="hostRouteName"><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">主机</a></a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage"><a :href="router.resolve({ name: 'host', params: { name: hostRouteName }, query: route.query }).href" @click.prevent="router.push({ name: 'host', params: { name: hostRouteName }, query: route.query })">{{ hostRouteName }}</a></a-breadcrumb-item><a-breadcrumb-item v-else>{{ hostRouteName || title }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb><h1 v-if="section !== 'purchase' && (!hostRouteName || terminalPage)">{{ terminalPage ? '终端' : title }}</h1></div>
+        <div v-if="!hostRouteName && loggedIn && section !== 'purchase'" class="page-actions-row"><a-button @click="load">刷新</a-button></div>
       </header>
       <p v-if="error" class="alert" role="alert">{{ error }}</p><p v-if="notice" class="notice" role="status">{{ notice }} <a v-if="payment?.ticket" :href="`https://ip.w7.cc/pay/${encodeURIComponent(payment.ticket)}?header=false&footer=false`" target="_blank" rel="noopener noreferrer">前往 W7 云支付 ↗</a></p>
       <section v-if="!loggedIn" class="panel"><h2>{{ isMicroApp ? '连接 CSM' : '登录 CSM' }}</h2><p class="hint">{{ isMicroApp ? '正在通过宿主授权访问 CSM。' : '使用 W7Panel 账户授权后管理云主机。' }}</p><button v-if="!loginPending" class="primary" @click="login">{{ isMicroApp ? '重试授权' : '登录' }}</button></section>
       <template v-else><section v-if="section === 'purchase'" class="panel purchase-page">
-        <p class="hint">按资源规格和购买时长配置订单，支付确认后生效。</p>
         <div class="purchase-meta">
           <label>资源类型<select v-model="form.kind"><option value="csm">云主机</option><option value="dataDisk">独立数据盘</option></select></label>
           <label>购买方式<select v-model="form.action"><option value="buy">购买</option><option value="renew">续费</option><option value="expand">扩容</option></select></label>
-          <label>名称<input v-model.trim="form.name" placeholder="例如 my-host" /></label>
+          <label v-if="form.kind === 'csm' && form.action === 'buy'">名称<span class="purchase-generated-name">{{ form.name }}</span></label>
+          <label v-else>名称<input v-model.trim="form.name" placeholder="资源名称" /></label>
           <label v-if="form.kind === 'csm' && form.action === 'buy'">系统模板<select v-model="form.templateName" required><option value="">请选择系统模板</option><option v-for="item in templates" :key="nameOf(item)" :value="nameOf(item)">{{ nameOf(item) }}</option></select></label>
         </div>
         <p v-if="form.kind === 'csm' && form.action === 'buy' && !loading && !templates.length" class="alert" role="alert">暂无可用系统模板，请先创建系统模板。</p>
         <div v-if="form.kind === 'csm' && form.action === 'buy' && quickPurchaseOptions.length" class="purchase-quick">
-          <span>快速选择配置</span>
-          <a-select :model-value="selectedQuickPurchase < 0 ? undefined : selectedQuickPurchase" aria-label="快速选择配置" placeholder="请选择配置" @change="applyQuickPurchase">
+          <span>快速选择配置：</span>
+          <a-select :model-value="selectedQuickPurchase < 0 ? undefined : selectedQuickPurchase" aria-label="快速选择配置" placeholder="请选择" @change="applyQuickPurchase">
             <a-option v-for="(item, index) in quickPurchaseOptions" :key="index" :value="index">{{ item.quantity }}{{ periodUnits[item.unit] }}/{{ item.cpu }}核/{{ item.memoryGi }}GiB/{{ item.bandwidthMbps }}Mbps/{{ item.storageGi }}GiB{{ item.discountNew < 100 ? ` · ${item.discountNew / 10} 折` : '' }}</a-option>
           </a-select>
         </div>
-        <div class="purchase-table">
-          <div class="purchase-row purchase-row-head"><span>名称</span><span>配置</span><span>价格</span></div>
-          <div v-for="item in visiblePurchaseResources" :key="item.field" class="purchase-row">
-            <span class="purchase-label">{{ item.label }}</span>
-            <div v-if="form.action !== 'renew'" class="purchase-control">
-              <a-slider v-model="form[item.field]" :min="1" :max="Math.max(item.max, Number(form[item.field]) || 1)" :aria-label="`${item.label}配置滑块`" />
-              <a-input-number v-model="form[item.field]" class="purchase-number" :min="1" :precision="0" :aria-label="`${item.label}配置`"><template #append>{{ item.unit }}</template></a-input-number>
-            </div>
-            <span v-else class="purchase-muted">沿用当前配置</span>
-            <span class="purchase-price">{{ linePrice(item) }}<small v-if="purchasePrices && form.action === 'buy'">¥{{ (purchasePrices[item.price] / 100).toFixed(2) }} / {{ item.unit }} / 月</small></span>
-          </div>
-        </div>
+        <table class="purchase-table"><thead><tr><th>名称</th><th>配置</th><th>价格</th></tr></thead><tbody>
+          <tr v-for="item in visiblePurchaseResources" :key="item.field">
+            <td>{{ item.label }}</td>
+            <td><div v-if="form.action !== 'renew'" class="purchase-control">
+              <a-slider v-model="form[item.field]" :min="1" :max="Math.max(item.max, Number(form[item.field]) || 1)" :marks="item.marks" :aria-label="`${item.label}配置滑块`" />
+              <a-input-number v-model="form[item.field]" :min="1" :precision="0" :aria-label="`${item.label}配置`" placeholder="请输入"><template #append>{{ item.unit }}</template></a-input-number>
+            </div><span v-else>沿用当前配置</span></td>
+            <td class="purchase-price">{{ linePrice(item) }}<small v-if="purchasePrices && form.action === 'buy'">¥{{ (purchasePrices[item.price] / 100).toFixed(2) }} / {{ item.unit }} / 月</small></td>
+          </tr>
+        </tbody></table>
+        <div v-if="form.action !== 'expand'" class="purchase-subtotal"><strong>价格小计</strong><span>{{ quoteAmountCents === null ? '—' : `¥${(quoteAmountCents / 100).toFixed(2)}` }}</span></div>
         <div v-if="form.action !== 'expand'" class="purchase-duration">
-          <strong>购买时长</strong>
-          <div class="purchase-periods">
-            <button v-for="period in purchasePeriods.slice(0, 8)" :key="`${period.quantity}-${period.unit}`" type="button" class="light" :class="{ chosen: form.quantity === period.quantity && form.unit === period.unit }" @click="form.quantity = period.quantity; form.unit = period.unit">{{ period.quantity }}{{ periodUnits[period.unit] }}</button>
-            <a-dropdown trigger="click" @select="selectPurchasePeriod"><button type="button" class="light" :class="{ chosen: morePurchasePeriod }">{{ morePurchasePeriod ? `${morePurchasePeriod.quantity}${periodUnits[morePurchasePeriod.unit]}` : '更多时长' }} ▾</button><template #content><a-doption v-for="period in purchasePeriods.slice(8)" :key="`${period.quantity}-${period.unit}`" :value="`${period.unit}:${period.quantity}`">{{ period.quantity }}{{ periodUnits[period.unit] }}</a-doption></template></a-dropdown>
+          <span>时长</span><div class="purchase-duration-content">
+            <div class="purchase-periods"><a-button-group type="outline">
+              <a-button v-for="period in purchasePeriods.slice(0, 8)" :key="`${period.quantity}-${period.unit}`" :type="form.quantity === period.quantity && form.unit === period.unit ? 'primary' : 'outline'" @click="form.quantity = period.quantity; form.unit = period.unit">{{ period.quantity }}{{ periodUnits[period.unit] }}</a-button>
+            </a-button-group>
+            <a-dropdown trigger="click" @select="selectPurchasePeriod"><a-button :type="morePurchasePeriod ? 'primary' : 'secondary'">{{ morePurchasePeriod ? `${morePurchasePeriod.quantity}${periodUnits[morePurchasePeriod.unit]}` : '更多时长' }} ▾</a-button><template #content><a-doption v-for="period in purchasePeriods.slice(8)" :key="`${period.quantity}-${period.unit}`" :value="`${period.unit}:${period.quantity}`">{{ period.quantity }}{{ periodUnits[period.unit] }}</a-doption></template></a-dropdown></div>
+            <div class="purchase-custom"><label>自定义时长<input v-model.number="form.quantity" type="number" min="1" :max="periodLimits[form.unit]" /></label><label>单位<select v-model="form.unit"><option value="day">天</option><option value="month">月</option><option value="year">年</option></select></label></div>
           </div>
-          <div class="purchase-custom"><label>自定义时长<input v-model.number="form.quantity" type="number" min="1" :max="periodLimits[form.unit]" /></label><label>单位<select v-model="form.unit"><option value="day">天</option><option value="month">月</option><option value="year">年</option></select></label></div>
         </div>
         <div class="purchase-total"><span>总价</span><strong v-if="quoteAmountCents !== null">¥{{ (quoteAmountCents / 100).toFixed(2) }}</strong><span v-else>—</span></div>
         <p v-if="quoteAmountCents !== null && purchaseCombination && purchaseCombination.discountNew < 100" class="hint" role="status">已计入组合优惠：{{ purchaseCombination.discountNew }}%（{{ purchaseCombination.discountNew / 10 }} 折）</p>
         <p v-if="quoteLoading" class="hint" role="status">正在报价…</p><p v-else-if="quoteError" class="alert" role="alert">{{ quoteError }}</p>
-        <div class="purchase-actions"><button class="primary" :disabled="quoteAmountCents === null || quoteLoading || (form.kind === 'csm' && form.action === 'buy' && !form.templateName)" @click="buy">{{ form.action === 'renew' ? '续费' : form.action === 'expand' ? '扩容' : '购买' }}</button></div>
+        <div class="purchase-actions"><a-button type="primary" size="large" :disabled="quoteAmountCents === null || quoteLoading || (form.kind === 'csm' && form.action === 'buy' && !form.templateName)" @click="buy">{{ form.action === 'renew' ? '支付' : form.action === 'expand' ? '扩容' : '购买' }}</a-button></div>
       </section>
       <section v-else-if="section === 'pricing'" class="panel form-panel">
         <p class="hint">设置各项资源的月单价；购买页按实际资源和时长向服务端获取报价。只有创始人可保存。</p>
@@ -464,7 +472,7 @@ onUnmounted(() => { if (isMicroApp) window.$wujie?.bus?.$off?.('routeChange', on
         <div v-else class="table-wrap disk-table"><table><thead><tr><th>PVC / 类型</th><th>所属主机</th><th>容量</th><th>到期时间</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in diskRows" :key="`${row.systemHost ? 'system' : 'data'}:${row.metadata?.namespace || ''}:${nameOf(row)}`"><td><strong>{{ row.status?.pvcName || 'PVC 待创建' }}</strong><small>{{ row.systemHost ? '系统盘' : '数据盘' }} · {{ nameOf(row) }}</small></td><td>{{ row.spec?.attached ? row.spec?.csmName : '未挂载' }}</td><td>{{ row.spec?.storageGi || 0 }} GiB</td><td>{{ dateText(row.spec?.expireTime) }}</td><td><span class="status">{{ row.systemHost ? phaseOf(row.systemHost) : diskStatus(row) }}</span></td><td class="actions"><button v-if="row.systemHost" class="text" @click="openHost(row.systemHost)">主机详情</button><template v-else><button class="text" @click="detail('data-disks', row)">详情</button><button v-if="row.spec?.paid && !row.spec?.attached && row.status?.phase === 'Available'" class="text" @click="detail('data-disks', row)">挂载</button><button v-if="row.spec?.attached" class="text" @click="detail('data-disks', row)">卸载</button><button v-if="row.spec?.paid" class="text" @click="orderForDisk('renew', row)">续费</button><button v-if="row.spec?.paid" class="text" @click="orderForDisk('expand', row)">扩容</button><button v-if="!row.spec?.attached" class="text danger" @click="deleteDisk(row)">删除</button></template></td></tr></tbody></table></div>
       </section>
       <section v-else-if="section === 'hosts' && !hostRouteName" class="panel">
-        <div class="panel-head"><button class="primary" @click="go('purchase')">＋ 购买资源</button><span>{{ loading ? '正在加载…' : `${filteredHosts.length} / ${rows.length} 台主机` }}</span></div>
+        <div class="panel-head"><button class="primary" @click="openCsmPurchase">＋ 购买资源</button><span>{{ loading ? '正在加载…' : `${filteredHosts.length} / ${rows.length} 台主机` }}</span></div>
         <div class="host-filters"><label>用户名<input v-model.trim="hostUsernameSearch" type="search" placeholder="搜索用户名" /></label><label>主机状态<select v-model="hostPhaseSearch"><option value="">全部状态</option><option value="PendingPayment">待支付</option><option value="Provisioning">创建中</option><option value="Ready">运行中</option><option value="Expired">已过期</option><option value="Recycled">已回收</option><option value="Failed">故障中</option></select></label></div>
         <div v-if="!loading && !rows.length" class="empty">暂无记录。可从购买页面创建第一台主机。</div>
         <div v-else-if="!loading && !filteredHosts.length" class="empty">没有符合筛选条件的主机。</div>
@@ -608,43 +616,59 @@ input[type='checkbox'] { width: auto; min-height: 0; padding: 0; accent-color: r
 .order-search-field input { min-width: 0; }
 .panel-head strong { color: var(--color-text-1, #1d2129); }
 .detail .actions label { min-width: 220px; }
-.purchase-page { max-width: 960px; margin-inline: auto; }
-.purchase-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
+.purchase-page { max-width: 920px; margin-inline: auto; padding: 0; }
+.purchase-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; }
+.purchase-generated-name { display: flex; align-items: center; min-height: 32px; color: var(--color-text-1, #1d2129); }
 .purchase-quick { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
 .purchase-quick > span { flex: none; }
 .purchase-quick .arco-select { width: min(360px, 100%); }
-.purchase-table { overflow: hidden; }
-.purchase-row { display: grid; grid-template-columns: 120px minmax(0, 1fr) 190px; gap: 18px; align-items: center; min-height: 60px; padding: 10px 16px; border-top: 1px solid var(--color-border-2, #e5e6eb); }
-.purchase-row-head { min-height: 42px; border-top: 0; background: var(--color-fill-2, #f2f3f5); color: var(--color-text-3, #86909c); font-size: 12px; font-weight: 600; }
-.purchase-label { font-weight: 600; }
+.purchase-table { width: 100%; border-collapse: collapse; text-align: left; }
+.purchase-table th, .purchase-table td { padding: 10px 16px; border-bottom: 1px solid var(--color-border-1, #f2f3f5); line-height: 22px; }
+.purchase-table th { height: 42px; border-top: 0; background: var(--color-neutral-2, #f2f3f5); font-weight: 400; }
+.purchase-table td { height: 72px; }
+.purchase-table th:first-child { width: 120px; }
+.purchase-table th:last-child { width: 200px; }
 .purchase-control { display: flex; align-items: center; gap: 20px; min-width: 0; }
-.purchase-control .arco-slider { flex: 1; min-width: 80px; }
-.purchase-control .arco-input-number { flex: none; width: 150px; }
-.purchase-price { color: rgb(var(--orange-6, 255, 125, 0)); font-weight: 600; text-align: right; }
-.purchase-price small { display: block; margin-top: 3px; color: var(--color-text-3, #86909c); font-size: 11px; font-weight: 400; }
-.purchase-muted { color: var(--color-text-3, #86909c); }
-.purchase-duration { padding: 24px 0; border-bottom: 1px solid var(--color-border-2, #e5e6eb); }
-.purchase-duration strong { display: block; margin-bottom: 14px; }
-.purchase-periods { display: flex; flex-wrap: wrap; gap: 8px; }
-.purchase-periods button.chosen { border-color: rgb(var(--primary-6, 22, 93, 255)); background: rgb(var(--primary-6, 22, 93, 255)); color: #fff; }
+.purchase-control .arco-slider { flex: 1; min-width: 80px; margin-bottom: 0; padding-top: 10px; }
+.purchase-control .arco-input-number { flex: none; width: 160px; }
+.purchase-price, .purchase-subtotal > span { color: rgb(var(--orange-6, 255, 125, 0)); }
+.purchase-price small { display: block; margin-top: 3px; color: var(--color-text-3, #86909c); font-size: 11px; }
+.purchase-subtotal { display: grid; grid-template-columns: 120px minmax(0, 1fr) 200px; align-items: center; margin-top: 20px; padding: 20px 16px; }
+.purchase-subtotal > span { grid-column: 3; }
+.purchase-duration, .purchase-total { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 20px; align-items: start; padding: 10px; }
+.purchase-duration > span, .purchase-total > span { line-height: 32px; }
+.purchase-periods { display: flex; flex-wrap: wrap; align-items: center; gap: 20px; }
+.purchase-periods .arco-btn-group { display: flex; }
 .purchase-custom { display: flex; gap: 12px; margin-top: 16px; }
 .purchase-custom label:first-child { width: 180px; }
 .purchase-custom label:last-child { width: 100px; }
-.purchase-total { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; font-weight: 600; }
-.purchase-total strong { color: rgb(var(--orange-6, 255, 125, 0)); font-size: 26px; }
-.purchase-actions { display: flex; justify-content: center; }
-.purchase-actions .primary { min-width: 160px; }
+.purchase-total { align-items: center; margin-top: 8px; }
+.purchase-total strong { color: rgb(var(--orange-6, 255, 125, 0)); font-size: 20px; font-weight: 400; }
+.purchase-actions { display: flex; justify-content: center; margin-top: 40px; }
+.purchase-actions .arco-btn { width: 160px; }
+@media (max-width: 900px) {
+  .purchase-periods .arco-btn-group { flex-wrap: wrap; gap: 8px; }
+  .purchase-periods .arco-btn-group .arco-btn { border-radius: 2px; }
+}
 @media (max-width: 700px) {
   .purchase-meta { grid-template-columns: 1fr; }
-  .purchase-row { grid-template-columns: 70px minmax(0, 1fr); gap: 10px; }
-  .purchase-row-head span:last-child { display: none; }
-  .purchase-price { grid-column: 2; text-align: left; }
-  .purchase-control { gap: 8px; }
-  .purchase-control .arco-input-number { width: 118px; }
-  .purchase-custom label:first-child { width: 150px; }
   .purchase-quick { align-items: stretch; flex-direction: column; }
   .purchase-quick .arco-select { width: 100%; min-height: 44px; }
-  .purchase-periods .light, .purchase-actions .primary { min-height: 44px; }
+  .purchase-table, .purchase-table tbody, .purchase-table tr, .purchase-table td { display: block; width: 100%; }
+  .purchase-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .purchase-table tr { padding: 16px 0; border-bottom: 1px solid var(--color-border-1, #f2f3f5); }
+  .purchase-table td { height: auto; padding: 0; border: 0; }
+  .purchase-table td:first-child { font-weight: 600; }
+  .purchase-table td:nth-child(2) { padding: 12px 0; }
+  .purchase-table td:last-child { text-align: right; }
+  .purchase-control { gap: 8px; }
+  .purchase-control .arco-input-number { width: 118px; }
+  .purchase-subtotal { display: flex; justify-content: space-between; padding: 20px 0; }
+  .purchase-duration, .purchase-total { grid-template-columns: 1fr; gap: 8px; padding: 10px 0; }
+  .purchase-periods { gap: 12px; }
+  .purchase-periods .arco-btn-group .arco-btn, .purchase-periods > .arco-btn { min-height: 44px; }
+  .purchase-custom label:first-child { width: 150px; }
+  .purchase-actions .arco-btn { min-height: 44px; }
 }
 @media (max-width: 600px) {
   .panel-head { flex-wrap: wrap; }
