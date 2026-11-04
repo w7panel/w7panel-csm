@@ -448,7 +448,7 @@ onUnmounted(() => { window.removeEventListener('message', onPaymentMessage); if 
       </a-menu>
     </a-drawer>
     <main>
-      <header class="page-header">
+      <header class="page-header" :class="{ 'page-header--actions': !hostRouteName && loggedIn && section !== 'purchase' }">
         <div class="page-heading"><a-breadcrumb class="breadcrumb"><a-breadcrumb-item><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">资源管理</a></a-breadcrumb-item><a-breadcrumb-item v-if="hostRouteName"><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">主机</a></a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage"><a :href="router.resolve({ name: 'host', params: { name: hostRouteName }, query: route.query }).href" @click.prevent="router.push({ name: 'host', params: { name: hostRouteName }, query: route.query })">{{ hostRouteName }}</a></a-breadcrumb-item><a-breadcrumb-item v-else>{{ hostRouteName ? '主机详情' : title }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb></div>
         <div v-if="!hostRouteName && loggedIn && section !== 'purchase'" class="page-actions-row"><a-button @click="load">刷新</a-button></div>
       </header>
@@ -593,10 +593,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 main { grid-column: 2; grid-row: 2; min-width: 0; padding: 20px; }
 .shell--micro { display: block; background: #fff; }
 .shell--micro main { min-height: 100vh; padding: 20px; }
-.page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.page-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.page-header--actions { margin-bottom: 16px; }
 .page-heading { min-width: 0; }
 .page-header .breadcrumb { min-width: 0; overflow-wrap: anywhere; }
-.page-actions-row { display: flex; align-items: center; gap: 8px; margin-left: auto; padding-bottom: 2px; }
+.page-actions-row { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 h2 { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
 .panel { min-width: 0; margin-bottom: 20px; padding: 0 0 20px; border-radius: 4px; background: var(--color-bg-2, #fff); }
 .panel-head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 12px; color: var(--color-text-3, #86909c); font-size: 13px; }
@@ -664,8 +665,8 @@ textarea { min-height: 90px; resize: vertical; }
   .topbar { height: 60px; padding: 0 16px; }
   .topbar-context { display: none; }
   .mobile-menu-trigger { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; margin-left: -8px; padding: 0; border: 0; background: transparent; color: var(--color-text-1, #1d2129); font-size: 20px; }
-  main { min-height: calc(100vh - 60px); padding: 16px; }
-  .shell--micro main { min-height: 100vh; padding: 16px; }
+  main { min-height: calc(100vh - 60px); padding: 20px; }
+  .shell--micro main { min-height: 100vh; padding: 20px; }
   .panel { padding: 0 0 16px; }
   .grid { grid-template-columns: 1fr; }
   .page-actions-row > * { min-height: 44px; }
