@@ -7,6 +7,7 @@ import SystemTemplates from './SystemTemplates.vue'
 import UpgradeVersions from './UpgradeVersions.vue'
 import HostDetail from './HostDetail.vue'
 import { filterHosts, hostUsername } from './hostFilters'
+import { cloudConfigFromForm, emptyCloudConfigForm, formFromCloudConfig } from './cloudConfigForm'
 const TerminalModal = defineAsyncComponent(() => import('./TerminalModal.vue'))
 
 const tabs = [
@@ -120,7 +121,9 @@ const diskRows = computed(() => [
   })),
   ...rows.value,
 ])
-const draft = ref({ name: '', cloudConfig: '#cloud-config\npackages:\n  - curl\n', shell: '', kind: 'cloud', order: 0, resourceVersion: '' })
+const draft = ref({ name: '', cloudConfig: '', shell: '', kind: 'cloud', order: 0, resourceVersion: '' })
+const cloudForm = ref(emptyCloudConfigForm())
+const cloudEditor = ref('form')
 const appDrawerOpen = ref(false)
 const systemTemplatesComponent = ref(null)
 const appSaving = ref(false)
@@ -376,21 +379,40 @@ function onPaymentMessage(event) {
   if (payment.value && ['https://ip.w7.cc', 'https://user.w7.cc'].includes(event.origin) && event.data?.type === 'paysuccess') refreshPayment()
 }
 function openAppDrawer() {
-  draft.value = { name: '', cloudConfig: '#cloud-config\npackages:\n  - curl\n', shell: '', kind: 'cloud', order: 0, resourceVersion: '' }
+  draft.value = { name: '', cloudConfig: '', shell: '', kind: 'cloud', order: 0, resourceVersion: '' }
+  cloudForm.value = emptyCloudConfigForm()
+  cloudEditor.value = 'form'
   appError.value = ''
   appDrawerOpen.value = true
 }
 function editConfig(row) {
   draft.value = { name: nameOf(row), cloudConfig: row.spec?.cloudConfig || '', shell: row.spec?.shell || '', kind: row.spec?.shell ? 'shell' : 'cloud', order: row.spec?.order ?? 0, resourceVersion: row.metadata.resourceVersion }
+  const parsed = formFromCloudConfig(draft.value.cloudConfig)
+  cloudForm.value = parsed || emptyCloudConfigForm()
+  cloudEditor.value = draft.value.kind === 'cloud' && parsed ? 'form' : 'yaml'
   appError.value = ''
   appDrawerOpen.value = true
+}
+function changeCloudEditor(mode) {
+  if (mode === 'yaml' && cloudEditor.value === 'form') {
+    try { draft.value.cloudConfig = cloudForm.value.packages.trim() || cloudForm.value.commands.trim() || cloudForm.value.files.length ? cloudConfigFromForm(cloudForm.value) : '#cloud-config\n{}\n' }
+    catch (e) { appError.value = e.message; return }
+  }
+  if (mode === 'form' && cloudEditor.value === 'yaml') {
+    const parsed = formFromCloudConfig(draft.value.cloudConfig)
+    if (!parsed) { appError.value = '当前 YAML 含有表单未支持的字段或格式，请继续使用 YAML 编辑。'; return }
+    cloudForm.value = parsed
+  }
+  cloudEditor.value = mode
+  appError.value = ''
 }
 async function saveConfig() {
   appSaving.value = true
   appError.value = ''
   try {
     const editing = Boolean(draft.value.resourceVersion)
-    const spec = { order: Number(draft.value.order), ...(draft.value.kind === 'shell' ? { shell: draft.value.shell } : { cloudConfig: draft.value.cloudConfig }) }
+    const cloudConfig = draft.value.kind === 'cloud' && cloudEditor.value === 'form' ? cloudConfigFromForm(cloudForm.value) : draft.value.cloudConfig
+    const spec = { order: Number(draft.value.order), ...(draft.value.kind === 'shell' ? { shell: draft.value.shell } : { cloudConfig }) }
     if (!editing) spec.enabled = true
     await api(`/preinstall-applications${editing ? `/${encodeURIComponent(draft.value.name)}` : ''}`, { method: editing ? 'PUT' : 'POST', body: JSON.stringify({ metadata: { name: draft.value.name, ...(editing ? { resourceVersion: draft.value.resourceVersion } : {}) }, spec }) })
     appDrawerOpen.value = false
@@ -523,7 +545,10 @@ onUnmounted(() => { window.removeEventListener('message', onPaymentMessage); if 
         <section v-else class="panel form-panel"><div class="table-wrap app-config-table"><table><thead><tr><th>名称</th><th>执行顺序</th><th>类型</th><th>操作</th></tr></thead><tbody><tr v-for="row in appRows" :key="nameOf(row)"><td>{{ nameOf(row) }}</td><td>{{ row.spec?.order }}</td><td>{{ row.spec?.cloudConfig || row.spec?.hasCloudConfig ? 'cloud-init' : '旧版 Shell' }}</td><td class="actions"><button v-if="row.spec?.cloudConfig || row.spec?.shell" class="text" @click="editConfig(row)">编辑</button><button class="text danger" @click="remove(`/preinstall-applications/${encodeURIComponent(nameOf(row))}`)">删除</button></td></tr></tbody></table></div><div v-if="!appRows.length" class="empty">暂无初始化配置</div></section>
       </template>
       <a-drawer v-model:visible="appDrawerOpen" :title="draft.resourceVersion ? '编辑初始化配置' : '新建初始化配置'" width="min(560px, 100vw)" :footer="false" :unmount-on-close="true">
-        <form @submit.prevent="saveConfig"><p v-if="appError" class="alert" role="alert">{{ appError }}</p><div class="grid"><label>名称<input v-model.trim="draft.name" required maxlength="63" placeholder="唯一名称" :readonly="!!draft.resourceVersion" /></label><label>合并顺序<input v-model.number="draft.order" type="number" required /></label><label v-if="draft.kind === 'shell'" class="script-field">Shell 脚本<textarea v-model="draft.shell" required rows="10" spellcheck="false" /></label><label v-else class="script-field">cloud-config YAML<textarea v-model="draft.cloudConfig" required rows="10" spellcheck="false" /></label></div><p v-if="draft.kind === 'cloud'" class="hint">以 #cloud-config 开头；同名字段以后项为准，列表按顺序追加，实际执行遵循 cloud-init 模块阶段。</p><div class="app-drawer-actions"><button type="button" class="light" @click="appDrawerOpen = false">取消</button><button class="primary" :disabled="appSaving">{{ appSaving ? '保存中…' : '保存配置' }}</button></div></form>
+        <form @submit.prevent="saveConfig"><p v-if="appError" class="alert" role="alert">{{ appError }}</p><div class="grid"><label>名称<input v-model.trim="draft.name" required maxlength="63" placeholder="唯一名称" :readonly="!!draft.resourceVersion" /></label><label>合并顺序<input v-model.number="draft.order" type="number" required /></label><label v-if="draft.kind === 'shell'" class="script-field">Shell 脚本<textarea v-model="draft.shell" required rows="10" spellcheck="false" /></label></div>
+          <template v-if="draft.kind === 'cloud'"><div class="cloud-editor-tabs" role="group" aria-label="配置方式"><button type="button" :class="{ active: cloudEditor === 'form' }" :aria-pressed="cloudEditor === 'form'" @click="changeCloudEditor('form')">表单配置</button><button type="button" :class="{ active: cloudEditor === 'yaml' }" :aria-pressed="cloudEditor === 'yaml'" @click="changeCloudEditor('yaml')">YAML 编辑</button></div>
+            <div v-if="cloudEditor === 'form'" class="cloud-form"><label>安装软件包<textarea v-model="cloudForm.packages" rows="3" placeholder="每行一个，例如 curl" /></label><label>启动后执行命令<textarea v-model="cloudForm.commands" rows="4" placeholder="每行一条命令，例如 systemctl enable nginx" /></label><div class="cloud-file-head"><strong>写入文件</strong><button type="button" class="light" @click="cloudForm.files.push({ path: '', content: '' })">＋ 添加文件</button></div><div v-for="(file, index) in cloudForm.files" :key="index" class="cloud-file"><label>文件绝对路径<input v-model.trim="file.path" required placeholder="例如 /etc/csm/config.txt" /></label><label>文件内容<textarea v-model="file.content" rows="4" /></label><button type="button" class="text danger" @click="cloudForm.files.splice(index, 1)">删除文件</button></div></div>
+            <label v-else class="cloud-yaml">cloud-config YAML<textarea v-model="draft.cloudConfig" required rows="12" spellcheck="false" /></label><p class="hint">同名字段以后项为准，列表按顺序追加；cloud-init 仅在首次启动时运行。</p></template><div class="app-drawer-actions"><button type="button" class="light" @click="appDrawerOpen = false">取消</button><button class="primary" :disabled="appSaving">{{ appSaving ? '保存中…' : '保存配置' }}</button></div></form>
       </a-drawer>
       <a-modal :visible="!!payment" title="支付" width="min(1000px, 100vw)" :footer="false" :mask-closable="false" @cancel="payment = null"><iframe v-if="paymentURL" :src="paymentURL" title="CSM 订单支付" class="payment-frame" /><div class="purchase-actions"><a-button type="primary" @click="refreshPayment">已支付，刷新状态</a-button><a-button @click="payment = null">稍后支付</a-button></div></a-modal>
       <UpgradeVersions v-if="section === 'versions'" :rows="rows" :loading="loading" @saved="load" />
@@ -631,6 +656,14 @@ textarea { min-height: 90px; resize: vertical; }
 .page-tabs button { flex: none; padding: 10px 2px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--color-text-2, #4e5969); }
 .page-tabs button.active { border-bottom-color: rgb(var(--primary-6, 22, 93, 255)); color: rgb(var(--primary-6, 22, 93, 255)); font-weight: 600; }
 .script-field { grid-column: 1 / -1; }
+.cloud-editor-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+.cloud-editor-tabs button { min-height: 36px; padding: 6px 12px; border: 1px solid var(--color-border-2, #e5e6eb); border-radius: 2px; background: var(--color-bg-2, #fff); }
+.cloud-editor-tabs button.active { border-color: rgb(var(--primary-6, 22, 93, 255)); color: rgb(var(--primary-6, 22, 93, 255)); }
+.cloud-form { display: grid; gap: 16px; margin-bottom: 16px; }
+.cloud-file-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cloud-file { display: grid; gap: 12px; padding: 12px; border: 1px solid var(--color-border-2, #e5e6eb); }
+.cloud-file .text { justify-self: start; }
+.cloud-yaml { margin-bottom: 16px; }
 .app-drawer-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .quote { color: var(--color-text-2, #4e5969); }
 .quote strong { margin-left: 8px; color: var(--color-text-1, #1d2129); font-size: 20px; }
