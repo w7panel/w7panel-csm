@@ -1,16 +1,19 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { api, items, newestFirst } from './api'
 
 defineProps({ rows: { type: Array, required: true }, loading: Boolean })
 const emit = defineEmits(['saved'])
+const route = useRoute()
+const router = useRouter()
 const creating = ref(false)
 const templates = ref([])
 const draft = ref({ name: '', templateName: '', version: '' })
 const saving = ref(false)
 const error = ref('')
-const selected = ref(null)
-const view = ref('')
+const selectedName = computed(() => typeof route.params.name === 'string' ? route.params.name : '')
+const view = computed(() => route.name === 'version-policies' ? 'policies' : route.name === 'version-executions' ? 'executions' : '')
 const policies = ref([])
 const executions = ref([])
 const policyForm = ref(null)
@@ -41,13 +44,22 @@ async function removeVersion(row) {
   catch (e) { error.value = e.message }
 }
 async function openView(row, next) {
-  selected.value = row; view.value = next; policyForm.value = null; policyDrawerOpen.value = false; error.value = ''
+  await router.push({ name: `version-${next}`, params: { name: row.metadata.name } })
+}
+async function loadView() {
+  const name = selectedName.value
+  const next = view.value
+  if (!name || !next) return
+  policyForm.value = null; policyDrawerOpen.value = false; error.value = ''
   policies.value = []; executions.value = []
   try {
-    if (next === 'policies') policies.value = newestFirst(items(await api('/upgrade-policies')).filter(item => item.spec?.versionName === row.metadata.name))
-    else executions.value = newestFirst(items(await api('/upgrade-executions')).filter(item => item.spec?.versionName === row.metadata.name))
-  } catch (e) { error.value = e.message }
+    const list = newestFirst(items(await api(next === 'policies' ? '/upgrade-policies' : '/upgrade-executions')).filter(item => item.spec?.versionName === name))
+    if (name !== selectedName.value || next !== view.value) return
+    if (next === 'policies') policies.value = list
+    else executions.value = list
+  } catch (e) { if (name === selectedName.value && next === view.value) error.value = e.message }
 }
+watch([selectedName, view], loadView, { immediate: true })
 function editPolicy(row) {
   policyForm.value = row ? { name: row.metadata.name, resourceVersion: row.metadata.resourceVersion, enabled: !!row.spec.enabled, order: row.spec.order ?? 0, shell: row.spec.shell || '' } : { name: '', resourceVersion: '', enabled: true, order: policies.value.length, shell: '' }
   formError.value = ''
@@ -57,16 +69,16 @@ async function savePolicy() {
   policySaving.value = true; formError.value = ''
   try {
     const form = policyForm.value
-    await api(form.resourceVersion ? `/upgrade-policies/${encodeURIComponent(form.name)}` : '/upgrade-policies', { method: form.resourceVersion ? 'PUT' : 'POST', body: JSON.stringify({ metadata: { name: form.name, resourceVersion: form.resourceVersion }, spec: { versionName: selected.value.metadata.name, enabled: form.enabled, order: form.order, shell: form.shell } }) })
+    await api(form.resourceVersion ? `/upgrade-policies/${encodeURIComponent(form.name)}` : '/upgrade-policies', { method: form.resourceVersion ? 'PUT' : 'POST', body: JSON.stringify({ metadata: { name: form.name, resourceVersion: form.resourceVersion }, spec: { versionName: selectedName.value, enabled: form.enabled, order: form.order, shell: form.shell } }) })
     policyForm.value = null
-    await openView(selected.value, 'policies')
+    await loadView()
   } catch (e) { formError.value = e.message }
   finally { policySaving.value = false }
 }
 async function removePolicy(row) {
   if (!window.confirm(`确定删除脚本 ${row.metadata.name}？`)) return
   error.value = ''
-  try { await api(`/upgrade-policies/${encodeURIComponent(row.metadata.name)}`, { method: 'DELETE' }); await openView(selected.value, 'policies') }
+  try { await api(`/upgrade-policies/${encodeURIComponent(row.metadata.name)}`, { method: 'DELETE' }); await loadView() }
   catch (e) { error.value = e.message }
 }
 function time(value) { return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '—' }
@@ -76,18 +88,20 @@ const phase = { running: '执行中', applying: '应用中', succeeded: '成功'
 <template>
   <section class="panel version-page">
     <p v-if="error" class="alert" role="alert">{{ error }}</p>
-    <div class="panel-head"><button class="primary" @click="openCreate">＋ 新建版本</button><span>{{ loading ? '正在加载…' : `${rows.length} 个版本` }}</span></div>
-    <div v-if="!loading && !rows.length" class="empty">暂无升级版本，请先新建版本。</div>
-    <div v-else class="table-wrap"><table><thead><tr><th>版本名称</th><th>版本号</th><th>目标模板</th><th>操作</th></tr></thead><tbody><tr v-for="row in rows" :key="row.metadata.name"><td class="mono">{{ row.metadata.name }}</td><td>{{ row.spec?.version }}</td><td>{{ row.spec?.templateName }}</td><td class="actions"><button class="text" @click="openView(row, 'policies')">升级脚本</button><button class="text" @click="openView(row, 'executions')">执行记录</button><button class="text danger" @click="removeVersion(row)">删除</button></td></tr></tbody></table></div>
-    <div v-if="selected" class="version-detail">
-      <div class="panel-head"><h2>{{ selected.metadata.name }} · {{ view === 'policies' ? '升级脚本' : '执行记录' }}</h2><button class="text" @click="selected = null">关闭</button></div>
+    <template v-if="!selectedName">
+      <div class="panel-head"><button class="primary" @click="openCreate">＋ 新建版本</button><span>{{ loading ? '正在加载…' : `${rows.length} 个版本` }}</span></div>
+      <div v-if="!loading && !rows.length" class="empty">暂无升级版本，请先新建版本。</div>
+      <div v-else class="table-wrap"><table><thead><tr><th>版本名称</th><th>版本号</th><th>目标模板</th><th>操作</th></tr></thead><tbody><tr v-for="row in rows" :key="row.metadata.name"><td class="mono">{{ row.metadata.name }}</td><td>{{ row.spec?.version }}</td><td>{{ row.spec?.templateName }}</td><td class="actions"><button class="text" @click="openView(row, 'policies')">升级脚本</button><button class="text" @click="openView(row, 'executions')">执行记录</button><button class="text danger" @click="removeVersion(row)">删除</button></td></tr></tbody></table></div>
+    </template>
+    <div v-else class="version-detail">
+      <div class="panel-head"><h2>{{ selectedName }} · {{ view === 'policies' ? '升级脚本' : '执行记录' }}</h2><button class="light" @click="router.push({ name: 'versions' })">返回版本列表</button></div>
       <template v-if="view === 'policies'">
         <button class="primary" @click="editPolicy(null)">＋ 新增脚本</button>
         <div v-if="!policies.length" class="empty">暂无升级脚本。</div>
         <div v-else class="table-wrap policy-table"><table><thead><tr><th>名称</th><th>顺序</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in policies" :key="row.metadata.name"><td class="mono">{{ row.metadata.name }}</td><td>{{ row.spec.order }}</td><td>{{ row.spec.enabled ? '启用' : '停用' }}</td><td class="actions"><button class="text" @click="editPolicy(row)">编辑</button><button class="text danger" @click="removePolicy(row)">删除</button></td></tr></tbody></table></div>
       </template>
       <template v-else>
-        <button class="light" @click="openView(selected, 'executions')">刷新记录</button>
+        <button class="light" @click="loadView">刷新记录</button>
         <div v-if="!executions.length" class="empty">暂无执行记录。</div>
         <div v-else class="table-wrap record-table"><table><thead><tr><th>执行名称</th><th>主机</th><th>发起人</th><th>状态</th><th>开始时间</th><th>完成时间</th></tr></thead><tbody><tr v-for="row in executions" :key="row.metadata.name"><td class="mono">{{ row.metadata.name }}</td><td>{{ row.spec.csmNamespace }} / {{ row.spec.csmName }}</td><td>{{ row.spec.approvedBy }}</td><td>{{ phase[row.status?.phase] || row.status?.phase || '待执行' }}</td><td>{{ time(row.status?.startedAt || row.metadata.creationTimestamp) }}</td><td>{{ time(row.status?.completedAt) }}<details v-if="row.status?.log || row.status?.message"><summary>查看日志</summary><pre>{{ row.status.log || row.status.message }}</pre></details></td></tr></tbody></table></div>
       </template>
@@ -107,11 +121,11 @@ const phase = { running: '执行中', applying: '应用中', succeeded: '成功'
 </template>
 
 <style scoped>
-.version-detail{margin-top:24px;padding:20px;background:var(--color-bg-2,#fff)}
+.version-detail{min-width:0}
 .drawer-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
 .version-detail>.panel-head h2{overflow-wrap:anywhere}
 .version-detail>.primary,.version-detail>.light{margin-bottom:12px}
-.policy-enabled{display:flex;align-items:center;gap:8px}.policy-enabled input{width:auto}
+.policy-enabled{grid-column:1/-1;flex-direction:row;align-items:center;gap:8px;white-space:nowrap}.policy-enabled input{flex:none;width:16px;min-height:16px;padding:0}
 pre{max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere}
-@media(max-width:600px){.version-detail{padding:16px}.version-page .panel-head{gap:12px;flex-wrap:wrap}.record-table td:nth-child(2)::before{content:'主机'}.record-table td:nth-child(3)::before{content:'发起人'}.record-table td:nth-child(4)::before{content:'状态'}.record-table td:nth-child(5)::before{content:'开始时间'}.record-table td:nth-child(6)::before{content:'完成时间'}.policy-table td:nth-child(2)::before{content:'顺序'}.policy-table td:nth-child(3)::before{content:'状态'}}
+@media(max-width:600px){.version-page .panel-head{gap:12px;flex-wrap:wrap}.record-table td:nth-child(2)::before{content:'主机'}.record-table td:nth-child(3)::before{content:'发起人'}.record-table td:nth-child(4)::before{content:'状态'}.record-table td:nth-child(5)::before{content:'开始时间'}.record-table td:nth-child(6)::before{content:'完成时间'}.policy-table td:nth-child(2)::before{content:'顺序'}.policy-table td:nth-child(3)::before{content:'状态'}}
 </style>

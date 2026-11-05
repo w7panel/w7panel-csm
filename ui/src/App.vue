@@ -19,7 +19,7 @@ const tabs = [
 const route = useRoute()
 const router = useRouter()
 const isMicroApp = Boolean(window.__POWERED_BY_WUJIE__)
-const hostRouteName = computed(() => route.params.name || '')
+const hostRouteName = computed(() => route.meta.section === 'hosts' ? route.params.name || '' : '')
 const hostRouteNamespace = computed(() => typeof route.query.namespace === 'string' ? route.query.namespace : '')
 const terminalPage = computed(() => route.name === 'terminal')
 const hostLoading = ref(false)
@@ -513,7 +513,7 @@ onUnmounted(() => { window.removeEventListener('message', onPaymentMessage); if 
     </a-drawer>
     <main>
       <header class="page-header" :class="{ 'page-header--actions': !hostRouteName && loggedIn && section !== 'purchase' }">
-        <div class="page-heading"><a-breadcrumb class="breadcrumb"><a-breadcrumb-item><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">资源管理</a></a-breadcrumb-item><a-breadcrumb-item v-if="hostRouteName"><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">主机</a></a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage"><a :href="router.resolve({ name: 'host', params: { name: hostRouteName }, query: route.query }).href" @click.prevent="router.push({ name: 'host', params: { name: hostRouteName }, query: route.query })">{{ hostRouteName }}</a></a-breadcrumb-item><a-breadcrumb-item v-else>{{ hostRouteName ? '主机详情' : title }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item></a-breadcrumb></div>
+        <div class="page-heading"><a-breadcrumb class="breadcrumb"><a-breadcrumb-item><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">资源管理</a></a-breadcrumb-item><a-breadcrumb-item v-if="hostRouteName"><a :href="router.resolve({ name: 'hosts' }).href" @click.prevent="go('hosts')">主机</a></a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage"><a :href="router.resolve({ name: 'host', params: { name: hostRouteName }, query: route.query }).href" @click.prevent="router.push({ name: 'host', params: { name: hostRouteName }, query: route.query })">{{ hostRouteName }}</a></a-breadcrumb-item><a-breadcrumb-item v-else-if="route.meta.versionPage"><a :href="router.resolve({ name: 'versions' }).href" @click.prevent="go('versions')">版本升级</a></a-breadcrumb-item><a-breadcrumb-item v-else>{{ hostRouteName ? '主机详情' : title }}</a-breadcrumb-item><a-breadcrumb-item v-if="terminalPage">终端</a-breadcrumb-item><a-breadcrumb-item v-if="route.meta.versionPage">{{ route.params.name }} · {{ route.name === 'version-policies' ? '升级脚本' : '执行记录' }}</a-breadcrumb-item></a-breadcrumb></div>
         <div v-if="!hostRouteName && loggedIn && section !== 'purchase'" class="page-actions-row"><a-button @click="load">刷新</a-button></div>
       </header>
       <p v-if="error" class="alert" role="alert">{{ error }}</p><p v-if="notice" class="notice" role="status">{{ notice }} <a v-if="payment?.ticket" :href="paymentURL" target="_blank" rel="noopener noreferrer">打开支付页面 ↗</a></p>
