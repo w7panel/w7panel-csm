@@ -523,6 +523,7 @@ onUnmounted(() => { window.removeEventListener('message', onPaymentMessage); if 
             <td class="purchase-price">{{ linePrice(item) }}<small v-if="purchasePrices && form.action === 'buy'">¥{{ (purchasePrices[item.price] / 100).toFixed(2) }} / {{ item.unit }} / 月</small></td>
           </tr>
         </tbody></table>
+        <label v-if="purchaseFeaturesReady && form.action !== 'expand'" class="purchase-coupon">优惠码<input v-model.trim="form.couponCode" placeholder="请输入优惠码" autocomplete="off" /></label>
         <div v-if="form.action !== 'expand'" class="purchase-subtotal"><strong>价格小计</strong><span>{{ quoteAmountCents === null ? '—' : `¥${(quoteAmountCents / 100).toFixed(2)}` }}</span></div>
         <div v-if="form.action !== 'expand'" class="purchase-duration">
           <span>时长</span><div class="purchase-duration-content">
@@ -534,7 +535,6 @@ onUnmounted(() => { window.removeEventListener('message', onPaymentMessage); if 
           </div>
         </div>
         <div class="purchase-total"><span>总价</span><strong v-if="quoteAmountCents !== null">¥{{ (quoteAmountCents / 100).toFixed(2) }}</strong><span v-else>—</span></div>
-        <label v-if="purchaseFeaturesReady && form.action !== 'expand'" class="purchase-coupon">优惠码<input v-model.trim="form.couponCode" placeholder="请输入优惠码" autocomplete="off" /></label>
         <p v-if="quoteAmountCents !== null && purchaseCombination && purchaseCombination.discountNew < 100" class="hint" role="status">已计入组合优惠：{{ purchaseCombination.discountNew }}%（{{ purchaseCombination.discountNew / 10 }} 折）</p>
         <p v-if="quoteAmountCents !== null && form.couponCode" class="hint" role="status">优惠码已计入总价。</p>
         <p v-if="quoteLoading" class="hint" role="status">正在报价…</p><p v-else-if="quoteError" class="alert" role="alert">{{ quoteError }}</p>
