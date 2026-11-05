@@ -82,6 +82,9 @@ func applySpec(spec map[string]any, r Record) error {
 	switch r.Action {
 	case "buy":
 		spec["paid"] = true
+		if r.StorageClassName != "" {
+			spec["storageClassName"] = r.StorageClassName
+		}
 		spec["storageGi"] = r.StorageGi
 		if r.Kind == "csm" {
 			delete(spec, "storageGi")

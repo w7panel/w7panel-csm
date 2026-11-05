@@ -11,19 +11,20 @@ import (
 
 // Request contains only product choices. The payment gateway calculates the price.
 type Request struct {
-	Kind          string `json:"kind"`   // csm or dataDisk
-	Action        string `json:"action"` // buy, renew or expand
-	Namespace     string `json:"namespace"`
-	Name          string `json:"name"`
-	TemplateName  string `json:"templateName,omitempty"`
-	CPU           int64  `json:"cpu,omitempty"`
-	MemoryGi      int64  `json:"memoryGi,omitempty"`
-	StorageGi     int64  `json:"storageGi,omitempty"`
-	BandwidthMbps int64  `json:"bandwidthMbps,omitempty"`
-	Quantity      int64  `json:"quantity,omitempty"`
-	Unit          string `json:"unit,omitempty"`
-	CouponCode    string `json:"couponCode,omitempty"`
-	FounderFree   bool   `json:"founderFree,omitempty"`
+	Kind             string `json:"kind"`   // csm or dataDisk
+	Action           string `json:"action"` // buy, renew or expand
+	Namespace        string `json:"namespace"`
+	Name             string `json:"name"`
+	TemplateName     string `json:"templateName,omitempty"`
+	CPU              int64  `json:"cpu,omitempty"`
+	MemoryGi         int64  `json:"memoryGi,omitempty"`
+	StorageGi        int64  `json:"storageGi,omitempty"`
+	StorageClassName string `json:"storageClassName,omitempty"`
+	BandwidthMbps    int64  `json:"bandwidthMbps,omitempty"`
+	Quantity         int64  `json:"quantity,omitempty"`
+	Unit             string `json:"unit,omitempty"`
+	CouponCode       string `json:"couponCode,omitempty"`
+	FounderFree      bool   `json:"founderFree,omitempty"`
 }
 
 type Payment struct {
@@ -153,6 +154,9 @@ func Validate(r Request) error {
 		return ErrInvalid
 	}
 	if r.Kind != "csm" && r.Kind != "dataDisk" {
+		return ErrInvalid
+	}
+	if r.StorageClassName != "" && len(validation.IsDNS1123Subdomain(r.StorageClassName)) != 0 {
 		return ErrInvalid
 	}
 	switch r.Action {

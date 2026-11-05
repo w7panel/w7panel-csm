@@ -7,6 +7,7 @@ import { deploymentToTemplateApp, emptyApp, normalizeApp, templateToDeployment, 
 defineProps({ rows: { type: Array, required: true }, loading: Boolean })
 const emit = defineEmits(['saved', 'navigate'])
 const editor = ref(null)
+const drawerOpen = ref(false)
 const applications = ref([])
 const saving = ref(false)
 const error = ref('')
@@ -27,6 +28,7 @@ async function open(row) {
       initMode: row.spec.initMode || '',
       preinstallApplications: [...(row.spec.preinstallApplications || [])],
     } : { name: '', resourceVersion: '', version: '', source: 'manual', image: '', app: emptyApp(), initMode: 'cloudInit', preinstallApplications: [] }
+    drawerOpen.value = true
   } catch (e) { error.value = e.message }
 }
 
@@ -56,7 +58,7 @@ async function save() {
       method: resourceVersion ? 'PUT' : 'POST',
       body: JSON.stringify({ metadata: { name, resourceVersion }, spec }),
     })
-    editor.value = null
+    drawerOpen.value = false
     emit('saved')
   } catch (e) { error.value = e.status === 409 ? '模板已被修改或配置有误，请刷新后重试。' : e.message }
   finally { saving.value = false }
@@ -73,8 +75,8 @@ async function save() {
       <button class="light" @click="open(row)">编辑配置</button>
     </div>
   </section>
-  <section v-if="editor" class="panel template-editor">
-    <div class="panel-head"><h2>{{ editor.resourceVersion ? `编辑 ${editor.name}` : '新建系统模板' }}</h2><button class="text" @click="editor = null">关闭</button></div>
+  <a-drawer v-model:visible="drawerOpen" :title="editor?.resourceVersion ? `编辑 ${editor.name}` : '新建系统模板'" width="min(720px, 100vw)" :footer="false" :unmount-on-close="true">
+    <div v-if="editor" class="template-editor">
     <p class="hint">镜像须为可启动系统服务的 CSM 系统镜像。</p>
     <p v-if="error" class="alert" role="alert">{{ error }}</p>
     <form @submit.prevent="save">
@@ -87,10 +89,11 @@ async function save() {
       <fieldset v-if="hostAppEditor" class="app-editor-entry"><legend>应用配置</legend><p class="hint">支持系统镜像、环境变量及附加/初始化容器。数据卷、调度和 CSM 主容器启动命令不可修改。</p><button type="button" class="light" :disabled="!editor.image" @click="openAppEditor">编辑应用配置</button><p class="app-summary">{{ editor.app.containers.length }} 个附加容器 · {{ editor.app.initContainers.length }} 个初始化容器</p></fieldset>
       <TemplateAppFields v-else :app="editor.app" />
       <fieldset><legend>初始化配置</legend><p v-if="!applications.some(app => editor.initMode === 'cloudInit' ? (app.spec.cloudConfig || app.spec.hasCloudConfig) : (app.spec.shell || app.spec.hasShell))" class="hint">暂无可选配置，可从“初始化配置”页新增。</p><label v-for="app in applications.filter(app => editor.initMode === 'cloudInit' ? (app.spec.cloudConfig || app.spec.hasCloudConfig) : (app.spec.shell || app.spec.hasShell))" :key="app.metadata.name" class="template-check"><input v-model="editor.preinstallApplications" type="checkbox" :value="app.metadata.name" />{{ app.metadata.name }}</label></fieldset>
-      <div class="template-actions"><button type="button" class="light" @click="emit('navigate', 'apps')">管理初始化配置</button><button type="button" class="light" @click="editor = null">取消</button><button class="primary" :disabled="saving">{{ saving ? '保存中…' : '保存修改' }}</button></div>
+      <div class="template-actions"><button type="button" class="light" @click="drawerOpen = false; emit('navigate', 'apps')">管理初始化配置</button><button type="button" class="light" @click="drawerOpen = false">取消</button><button class="primary" :disabled="saving">{{ saving ? '保存中…' : '保存修改' }}</button></div>
     </form>
-  </section>
-  <p v-else-if="error" class="alert" role="alert">{{ error }}</p>
+    </div>
+  </a-drawer>
+  <p v-if="!drawerOpen && error" class="alert" role="alert">{{ error }}</p>
 </template>
 
 <style scoped>

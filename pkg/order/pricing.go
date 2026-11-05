@@ -15,6 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -25,6 +26,7 @@ type Prices struct {
 	CPUCents           int64              `json:"cpuCents"`
 	MemoryGiCents      int64              `json:"memoryGiCents"`
 	StorageGiCents     int64              `json:"storageGiCents"`
+	StorageClassName   string             `json:"storageClassName"`
 	BandwidthMbpsCents int64              `json:"bandwidthMbpsCents"`
 	Combinations       []PriceCombination `json:"combinations,omitempty"`
 }
@@ -70,6 +72,11 @@ func (p KubePricing) Put(ctx context.Context, prices Prices) error {
 	if err := prices.validate(); err != nil {
 		return err
 	}
+	if prices.StorageClassName != "" {
+		if _, err := p.Kube.StorageV1().StorageClasses().Get(ctx, prices.StorageClassName, metav1.GetOptions{}); err != nil {
+			return err
+		}
+	}
 	data, _ := json.Marshal(prices)
 	cm, err := p.Kube.CoreV1().ConfigMaps(p.Namespace).Get(ctx, PricingConfigMap, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
@@ -87,6 +94,18 @@ func (p KubePricing) Put(ctx context.Context, prices Prices) error {
 	return err
 }
 
+func (p KubePricing) StorageClasses(ctx context.Context) ([]string, error) {
+	list, err := p.Kube.StorageV1().StorageClasses().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(list.Items))
+	for _, item := range list.Items {
+		names = append(names, item.Name)
+	}
+	return names, nil
+}
+
 func (p KubePricing) Delete(ctx context.Context) error {
 	err := p.Kube.CoreV1().ConfigMaps(p.Namespace).Delete(ctx, PricingConfigMap, metav1.DeleteOptions{})
 	if apierrors.IsNotFound(err) {
@@ -96,6 +115,9 @@ func (p KubePricing) Delete(ctx context.Context) error {
 }
 
 func (p Prices) validate() error {
+	if p.StorageClassName != "" && len(validation.IsDNS1123Subdomain(p.StorageClassName)) != 0 {
+		return ErrInvalid
+	}
 	for _, cents := range []int64{p.CPUCents, p.MemoryGiCents, p.StorageGiCents, p.BandwidthMbpsCents} {
 		if cents < 0 || cents > 100_000_000 {
 			return ErrInvalid

@@ -49,6 +49,7 @@ type Server struct {
 		Put(context.Context, order.Prices) error
 		Delete(context.Context) error
 		Quote(context.Context, order.Request) (int64, string, url.Values, error)
+		StorageClasses(context.Context) ([]string, error)
 	}
 	Coupons        *order.KubeCoupons
 	UIRoot         string // absolute path to ui/dist at runtime
@@ -112,6 +113,7 @@ func (s *Server) Handler() http.Handler {
 	route("GET", "/coupons", s.listCoupons)
 	route("POST", "/coupons", s.createCoupon)
 	route("GET", "/pricing", s.getPricing)
+	route("GET", "/storage-classes", s.listStorageClasses)
 	route("PUT", "/pricing", s.putPricing)
 	route("DELETE", "/pricing", s.deletePricing)
 	route("POST", "/orders/quote", s.quoteOrder)
@@ -134,6 +136,21 @@ func (s *Server) getPricing(w http.ResponseWriter, r *http.Request) {
 	writeResult(w, prices, err)
 }
 
+func (s *Server) listStorageClasses(w http.ResponseWriter, r *http.Request) {
+	if !identity(r.Context()).Founder {
+		respondError(w, 403, "founder required")
+		return
+	}
+	if s.Pricing == nil {
+		respondError(w, 503, "pricing is not configured")
+		return
+	}
+	names, err := s.Pricing.StorageClasses(r.Context())
+	writeResult(w, struct {
+		Items []string `json:"items"`
+	}{names}, err)
+}
+
 func (s *Server) putPricing(w http.ResponseWriter, r *http.Request) {
 	if !identity(r.Context()).Founder {
 		respondError(w, 403, "founder required")
@@ -147,6 +164,7 @@ func (s *Server) putPricing(w http.ResponseWriter, r *http.Request) {
 		CPUCents           *int64                    `json:"cpuCents"`
 		MemoryGiCents      *int64                    `json:"memoryGiCents"`
 		StorageGiCents     *int64                    `json:"storageGiCents"`
+		StorageClassName   *string                   `json:"storageClassName"`
 		BandwidthMbpsCents *int64                    `json:"bandwidthMbpsCents"`
 		Combinations       *[]order.PriceCombination `json:"combinations"`
 	}
@@ -157,13 +175,24 @@ func (s *Server) putPricing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	prices := order.Prices{CPUCents: *input.CPUCents, MemoryGiCents: *input.MemoryGiCents, StorageGiCents: *input.StorageGiCents, BandwidthMbpsCents: *input.BandwidthMbpsCents}
+	if input.StorageClassName != nil {
+		prices.StorageClassName = *input.StorageClassName
+	}
 	if input.Combinations != nil {
 		prices.Combinations = *input.Combinations
-	} else if existing, err := s.Pricing.Get(r.Context()); err == nil {
-		prices.Combinations = existing.Combinations
-	} else if !errors.Is(err, order.ErrPricingMissing) {
-		writeResult(w, nil, err)
-		return
+	}
+	if input.Combinations == nil || input.StorageClassName == nil {
+		if existing, err := s.Pricing.Get(r.Context()); err == nil {
+			if input.Combinations == nil {
+				prices.Combinations = existing.Combinations
+			}
+			if input.StorageClassName == nil {
+				prices.StorageClassName = existing.StorageClassName
+			}
+		} else if !errors.Is(err, order.ErrPricingMissing) {
+			writeResult(w, nil, err)
+			return
+		}
 	}
 	if err := s.Pricing.Put(r.Context(), prices); err != nil {
 		writeResult(w, nil, err)
@@ -364,18 +393,29 @@ func (s *Server) createCoupon(w http.ResponseWriter, r *http.Request) {
 		respondError(w, 503, "coupons are not configured")
 		return
 	}
-	var coupon order.Coupon
+	var request struct {
+		Kind      string    `json:"kind"`
+		Action    string    `json:"action"`
+		Discount  int64     `json:"discount"`
+		ExpiresAt time.Time `json:"expiresAt"`
+		Count     int       `json:"count"`
+	}
 	decoder := json.NewDecoder(io.LimitReader(r.Body, 64<<10))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&coupon) != nil || decoder.Decode(new(any)) != io.EOF {
+	if decoder.Decode(&request) != nil || decoder.Decode(new(any)) != io.EOF {
 		respondError(w, 400, "invalid JSON")
 		return
 	}
-	if err := s.Coupons.Create(r.Context(), coupon); err != nil {
+	codes, err := s.Coupons.Generate(r.Context(), order.Coupon{Kind: request.Kind, Action: request.Action, Discount: request.Discount, ExpiresAt: request.ExpiresAt}, request.Count)
+	if err != nil {
 		writeResult(w, nil, err)
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(struct {
+		Codes []string `json:"codes"`
+	}{codes})
 }
 
 func (s *Server) orderNamespace(w http.ResponseWriter, r *http.Request) (string, bool) {
@@ -531,7 +571,8 @@ func (s *Server) createOrder(w http.ResponseWriter, r *http.Request) {
 		respondError(w, 400, "invalid JSON")
 		return
 	}
-	req.Namespace = ns // Never accept a tenant from the request body.
+	req.Namespace = ns        // Never accept a tenant from the request body.
+	req.StorageClassName = "" // The configured class, not the request body, controls new resources.
 	if req.Action == "buy" {
 		req.Name = ""
 	}
@@ -548,6 +589,14 @@ func (s *Server) createOrder(w http.ResponseWriter, r *http.Request) {
 		kind = "data-disks"
 	}
 	if req.Action == "buy" {
+		if s.Pricing != nil {
+			prices, err := s.Pricing.Get(r.Context())
+			if err != nil {
+				writeResult(w, nil, err)
+				return
+			}
+			req.StorageClassName = prices.StorageClassName
+		}
 		if req.Kind == "csm" {
 			raw, err := s.Backend.Get(r.Context(), "system-templates", "", req.TemplateName)
 			if err != nil {

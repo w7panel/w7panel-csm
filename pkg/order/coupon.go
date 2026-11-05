@@ -2,9 +2,11 @@ package order
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 	"time"
 
@@ -122,6 +124,52 @@ func (s KubeCoupons) Create(ctx context.Context, item Coupon) error {
 		return err
 	}
 	return errors.New("coupon update conflict")
+}
+
+// Generate creates a batch in one ConfigMap update so a failed request cannot leave a partial batch.
+func (s KubeCoupons) Generate(ctx context.Context, item Coupon, count int) ([]string, error) {
+	if count < 1 || count > 100 || (item.Kind != "csm" && item.Kind != "dataDisk") || (item.Action != "buy" && item.Action != "renew") || item.Discount < 1 || item.Discount > 99 || !item.ExpiresAt.After(s.now()) {
+		return nil, ErrInvalid
+	}
+	item.Status, item.OrderSn = "available", ""
+	for attempt := 0; attempt < 3; attempt++ {
+		cm, err := s.load(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if len(cm.Data)+count > 500 {
+			return nil, ErrInvalid
+		}
+		codes := make([]string, 0, count)
+		for len(codes) < count {
+			const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+			code := "CSM-"
+			for i := 0; i < 8; i++ {
+				n, err := rand.Int(rand.Reader, big.NewInt(int64(len(alphabet))))
+				if err != nil {
+					return nil, err
+				}
+				code += string(alphabet[n.Int64()])
+			}
+			if _, exists := cm.Data[code]; exists {
+				continue
+			}
+			item.Code = code
+			data, _ := json.Marshal(item)
+			cm.Data[code] = string(data)
+			codes = append(codes, code)
+		}
+		if cm.ResourceVersion == "" {
+			_, err = s.Kube.CoreV1().ConfigMaps(s.Namespace).Create(ctx, cm, metav1.CreateOptions{})
+		} else {
+			_, err = s.Kube.CoreV1().ConfigMaps(s.Namespace).Update(ctx, cm, metav1.UpdateOptions{})
+		}
+		if apierrors.IsAlreadyExists(err) || apierrors.IsConflict(err) {
+			continue
+		}
+		return codes, err
+	}
+	return nil, errors.New("coupon update conflict")
 }
 
 func (s KubeCoupons) Check(ctx context.Context, r Request) (Coupon, error) {

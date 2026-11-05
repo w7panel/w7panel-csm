@@ -3,11 +3,38 @@ package order
 import (
 	"context"
 	"errors"
+	"regexp"
 	"testing"
 	"time"
 
 	"k8s.io/client-go/kubernetes/fake"
 )
+
+func TestGenerateCoupons(t *testing.T) {
+	now := time.Date(2026, 11, 4, 0, 0, 0, 0, time.UTC)
+	coupons := KubeCoupons{Kube: fake.NewSimpleClientset(), Namespace: "default", Now: func() time.Time { return now }}
+	item := Coupon{Code: "IGNORED", Kind: "csm", Action: "buy", Discount: 80, ExpiresAt: now.Add(time.Hour)}
+	for _, count := range []int{0, 101} {
+		if _, err := coupons.Generate(t.Context(), item, count); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("count %d: %v", count, err)
+		}
+	}
+	codes, err := coupons.Generate(t.Context(), item, 3)
+	if err != nil || len(codes) != 3 {
+		t.Fatalf("generated %v: %v", codes, err)
+	}
+	listed, err := coupons.List(t.Context())
+	if err != nil || len(listed) != 3 {
+		t.Fatalf("listed %v: %v", listed, err)
+	}
+	seen := map[string]bool{}
+	for _, code := range codes {
+		if !regexp.MustCompile(`^CSM-[0-9A-Z]{8}$`).MatchString(code) || seen[code] {
+			t.Fatalf("invalid or duplicate code: %s", code)
+		}
+		seen[code] = true
+	}
+}
 
 func TestCouponQuoteLockAndUse(t *testing.T) {
 	now := time.Date(2026, 11, 4, 0, 0, 0, 0, time.UTC)

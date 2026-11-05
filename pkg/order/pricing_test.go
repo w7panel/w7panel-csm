@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	storagev1 "k8s.io/api/storage/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 )
 
@@ -28,6 +30,24 @@ func TestKubePricingQuoteAndReset(t *testing.T) {
 	}
 	if err := p.Put(ctx, Prices{CPUCents: 100, MemoryGiCents: 50, StorageGiCents: 10, BandwidthMbpsCents: 20}); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := p.Kube.StorageV1().StorageClasses().Create(ctx, &storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{Name: "fast"}, Provisioner: "example.com/test"}, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if names, err := p.StorageClasses(ctx); err != nil || len(names) != 1 || names[0] != "fast" {
+		t.Fatalf("storage classes = %v, %v", names, err)
+	}
+	if err := p.Put(ctx, Prices{CPUCents: 100, MemoryGiCents: 50, StorageGiCents: 10, BandwidthMbpsCents: 20, StorageClassName: "fast"}); err != nil {
+		t.Fatal(err)
+	}
+	if saved, err := p.Get(ctx); err != nil || saved.StorageClassName != "fast" {
+		t.Fatalf("saved storage class = %+v, %v", saved, err)
+	}
+	if err := p.Put(ctx, Prices{StorageClassName: "missing"}); err == nil {
+		t.Fatal("missing storage class accepted")
+	}
+	if err := p.Put(ctx, Prices{StorageClassName: "invalid/class"}); err != ErrInvalid {
+		t.Fatalf("invalid storage class accepted: %v", err)
 	}
 	for _, tc := range []struct {
 		request Request

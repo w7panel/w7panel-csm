@@ -82,7 +82,13 @@ const couponsReady = ref(false)
 const accounts = ref([])
 const targetNamespace = ref('')
 const coupons = ref([])
-const couponDraft = ref({ code: '', kind: 'csm', action: 'buy', discount: 80, expiresAt: '' })
+const couponDraft = ref({ count: 1, kind: 'csm', action: 'buy', discount: 80, expiresAt: '' })
+const couponDrawerOpen = ref(false)
+const couponSaving = ref(false)
+const couponError = ref('')
+const storageClasses = ref([])
+const storageClassesReady = ref(false)
+const pricingStorageClassName = ref('')
 const paymentURL = computed(() => payment.value?.ticket ? `https://ip.w7.cc/pay/${encodeURIComponent(payment.value.ticket)}?header=false&footer=false&paid_callback=https%3A%2F%2Fuser.w7.cc%2Forder` : '')
 const pricingFields = [
   ['cpuCents', 'CPU', '核'], ['memoryGiCents', '内存', 'GiB'],
@@ -250,6 +256,7 @@ async function savePricing() {
     seen.add(key)
   }
   prices.combinations = combinations
+  if (storageClassesReady.value) prices.storageClassName = pricingStorageClassName.value
   error.value = ''; notice.value = ''
   try {
     await api('/pricing', { method: 'PUT', body: JSON.stringify(prices) })
@@ -258,13 +265,19 @@ async function savePricing() {
   } catch (e) { error.value = e.message }
 }
 async function createCoupon() {
-  error.value = ''; notice.value = ''
+  couponSaving.value = true; couponError.value = ''; notice.value = ''
   try {
-    await api('/coupons', { method: 'POST', body: JSON.stringify({ ...couponDraft.value, code: couponDraft.value.code.trim().toUpperCase(), discount: Number(couponDraft.value.discount), expiresAt: new Date(couponDraft.value.expiresAt).toISOString() }) })
-    couponDraft.value.code = ''
+    const result = await api('/coupons', { method: 'POST', body: JSON.stringify({ ...couponDraft.value, count: Number(couponDraft.value.count), discount: Number(couponDraft.value.discount), expiresAt: new Date(couponDraft.value.expiresAt).toISOString() }) })
     coupons.value = items(await api('/coupons'))
-    notice.value = '优惠码已创建。'
-  } catch (e) { error.value = e.message }
+    couponDrawerOpen.value = false
+    notice.value = `已生成 ${result.codes.length} 个优惠码，可在下方列表查看。`
+  } catch (e) { couponError.value = e.message }
+  finally { couponSaving.value = false }
+}
+function openCouponDrawer() {
+  couponDraft.value = { count: 1, kind: 'csm', action: 'buy', discount: 80, expiresAt: '' }
+  couponError.value = ''
+  couponDrawerOpen.value = true
 }
 async function optionalFeature(path) {
   try { return await api(path) }
@@ -303,11 +316,14 @@ async function load() {
     if (currentSection === 'pricing') {
       pricing.value = Object.fromEntries(pricingFields.map(([field]) => [field, extra ? (extra[field] / 100).toFixed(2) : '']))
       pricingCombinations.value = extra?.combinations?.map(item => ({ ...item })) || []
+      pricingStorageClassName.value = extra?.storageClassName || ''
       const session = await optionalFeature('/session')
       founder.value = !!session?.founder
-      const listedCoupons = founder.value ? await optionalFeature('/coupons') : null
+      const [listedCoupons, listedClasses] = founder.value ? await Promise.all([optionalFeature('/coupons'), optionalFeature('/storage-classes')]) : [null, null]
       couponsReady.value = !!listedCoupons
       coupons.value = items(listedCoupons)
+      storageClassesReady.value = !!listedClasses
+      storageClasses.value = items(listedClasses)
       if (!session || founder.value && !listedCoupons) notice.value = 'CSM 服务端版本尚未更新，优惠码管理暂不可用。'
     }
     if (currentSection === 'hosts') versions.value = items(extra)
@@ -527,6 +543,8 @@ onUnmounted(() => { window.removeEventListener('message', onPaymentMessage); if 
       <section v-else-if="section === 'pricing'" class="panel form-panel">
         <p class="hint">设置各项资源的月单价；购买页按实际资源和时长向服务端获取报价。只有创始人可保存。</p>
         <div class="grid"><label v-for="[field, label, unit] in pricingFields" :key="field">{{ label }}（元 / {{ unit }} / 月）<input v-model.trim="pricing[field]" type="number" min="0" step="0.01" required placeholder="0.00" /></label></div>
+        <label class="pricing-storage-class">默认 StorageClass<select v-model="pricingStorageClassName" :disabled="!storageClassesReady"><option value="">使用 Kubernetes 默认存储类</option><option v-for="name in storageClasses" :key="name" :value="name">{{ name }}</option></select></label>
+        <p class="hint">新购买的云主机系统盘和独立数据盘使用此存储类；已创建的磁盘不受影响。</p>
         <div class="pricing-combinations">
           <div class="panel-head"><strong>组合折扣</strong></div>
           <p class="hint">时长和 CPU、内存、存储、带宽全部匹配时生效；新购与续费分别设置，扩容仍按单价计算。100% 表示原价。</p>
@@ -538,8 +556,7 @@ onUnmounted(() => { window.removeEventListener('message', onPaymentMessage); if 
         </div>
         <button class="primary" @click="savePricing">保存费用配置</button>
         <div v-if="founder && couponsReady" class="pricing-coupons">
-          <div class="panel-head"><strong>优惠码</strong></div>
-          <form class="grid" @submit.prevent="createCoupon"><label>优惠码<input v-model.trim="couponDraft.code" required minlength="4" maxlength="32" placeholder="例如 CSM-2026" /></label><label>资源类型<select v-model="couponDraft.kind"><option value="csm">云主机</option><option value="dataDisk">独立数据盘</option></select></label><label>订单类型<select v-model="couponDraft.action"><option value="buy">购买</option><option value="renew">续费</option></select></label><label>支付比例（%）<input v-model.number="couponDraft.discount" type="number" min="1" max="99" required /></label><label>有效期至<input v-model="couponDraft.expiresAt" type="datetime-local" required /></label><button class="primary">创建优惠码</button></form>
+          <div class="panel-head"><strong>优惠码</strong><button class="primary" @click="openCouponDrawer">＋ 新建优惠码</button></div>
           <div v-if="coupons.length" class="table-wrap coupon-list"><table><thead><tr><th>优惠码</th><th>适用订单</th><th>支付比例</th><th>有效期</th><th>状态</th></tr></thead><tbody><tr v-for="coupon in coupons" :key="coupon.code"><td class="mono">{{ coupon.code }}</td><td>{{ coupon.kind === 'csm' ? '云主机' : '数据盘' }} · {{ coupon.action === 'buy' ? '购买' : '续费' }}</td><td>{{ coupon.discount }}%</td><td>{{ dateText(coupon.expiresAt) }}</td><td>{{ coupon.status === 'used' ? '已使用' : coupon.status === 'locked' ? '锁定中' : new Date(coupon.expiresAt) <= new Date() ? '已过期' : '可使用' }}</td></tr></tbody></table></div>
         </div>
       </section>
@@ -554,6 +571,9 @@ onUnmounted(() => { window.removeEventListener('message', onPaymentMessage); if 
           <template v-if="draft.kind === 'cloud'"><div class="cloud-editor-tabs" role="group" aria-label="配置方式"><button type="button" :class="{ active: cloudEditor === 'form' }" :aria-pressed="cloudEditor === 'form'" @click="changeCloudEditor('form')">表单配置</button><button type="button" :class="{ active: cloudEditor === 'yaml' }" :aria-pressed="cloudEditor === 'yaml'" @click="changeCloudEditor('yaml')">YAML 编辑</button></div>
             <div v-if="cloudEditor === 'form'" class="cloud-form"><label>安装软件包<textarea v-model="cloudForm.packages" rows="3" placeholder="每行一个，例如 curl" /></label><label>启动后执行命令<textarea v-model="cloudForm.commands" rows="4" placeholder="每行一条命令，例如 systemctl enable nginx" /></label><div class="cloud-file-head"><strong>写入文件</strong><button type="button" class="light" @click="cloudForm.files.push({ path: '', content: '' })">＋ 添加文件</button></div><div v-for="(file, index) in cloudForm.files" :key="index" class="cloud-file"><label>文件绝对路径<input v-model.trim="file.path" required placeholder="例如 /etc/csm/config.txt" /></label><label>文件内容<textarea v-model="file.content" rows="4" /></label><button type="button" class="text danger" @click="cloudForm.files.splice(index, 1)">删除文件</button></div></div>
             <label v-else class="cloud-yaml">cloud-config YAML<textarea v-model="draft.cloudConfig" required rows="12" spellcheck="false" /></label><p class="hint">同名字段以后项为准，列表按顺序追加；cloud-init 仅在首次启动时运行。</p></template><div class="app-drawer-actions"><button type="button" class="light" @click="appDrawerOpen = false">取消</button><button class="primary" :disabled="appSaving">{{ appSaving ? '保存中…' : '保存配置' }}</button></div></form>
+      </a-drawer>
+      <a-drawer v-model:visible="couponDrawerOpen" title="新建优惠码" width="min(560px, 100vw)" :footer="false" :unmount-on-close="true">
+        <form @submit.prevent="createCoupon"><p v-if="couponError" class="alert" role="alert">{{ couponError }}</p><div class="grid"><label>生成数量<input v-model.number="couponDraft.count" type="number" min="1" max="100" required /></label><label>资源类型<select v-model="couponDraft.kind"><option value="csm">云主机</option><option value="dataDisk">独立数据盘</option></select></label><label>订单类型<select v-model="couponDraft.action"><option value="buy">购买</option><option value="renew">续费</option></select></label><label>支付比例（%）<input v-model.number="couponDraft.discount" type="number" min="1" max="99" required /></label><label>有效期至<input v-model="couponDraft.expiresAt" type="datetime-local" required /></label></div><div class="app-drawer-actions"><button type="button" class="light" @click="couponDrawerOpen = false">取消</button><button class="primary" :disabled="couponSaving">{{ couponSaving ? '生成中…' : '生成优惠码' }}</button></div></form>
       </a-drawer>
       <a-modal :visible="!!payment" title="支付" width="min(1000px, 100vw)" :footer="false" :mask-closable="false" @cancel="payment = null"><iframe v-if="paymentURL" :src="paymentURL" title="CSM 订单支付" class="payment-frame" /><div class="purchase-actions"><a-button type="primary" @click="refreshPayment">已支付，刷新状态</a-button><a-button @click="payment = null">稍后支付</a-button></div></a-modal>
       <UpgradeVersions v-if="section === 'versions'" :rows="rows" :loading="loading" @saved="load" />
@@ -652,6 +672,7 @@ input:focus, select:focus, textarea:focus { border-color: rgb(var(--primary-6, 2
 textarea { min-height: 90px; resize: vertical; }
 .form-panel { padding: 0 0 20px; }
 .pricing-combinations { max-width: 1100px; margin-bottom: 20px; }
+.pricing-storage-class { max-width: 420px; margin-bottom: 8px; }
 .pricing-period-create { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
 .pricing-period-create label { width: 120px; }
 .combination-list table { min-width: 820px; }

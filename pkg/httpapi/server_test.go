@@ -12,9 +12,35 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/w7panel/w7panel-csm/pkg/order"
+	"k8s.io/client-go/kubernetes/fake"
 )
+
+func TestCouponGenerationRequiresFounderAndRejectsProvidedCode(t *testing.T) {
+	server := NewServer(func(_ context.Context, token string) (Identity, error) {
+		return Identity{Namespace: "csm-alice", Founder: token == "founder"}, nil
+	}, &backendStub{}, order.Service{Gateway: gatewayStub{}, Store: storeStub{}}, "")
+	server.Coupons = &order.KubeCoupons{Kube: fake.NewSimpleClientset(), Namespace: "default"}
+	call := func(token, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, Prefix+"/coupons", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		server.Handler().ServeHTTP(w, req)
+		return w
+	}
+	valid := `{"kind":"csm","action":"buy","discount":80,"count":2,"expiresAt":"` + time.Now().Add(time.Hour).UTC().Format(time.RFC3339) + `"}`
+	if w := call("tenant", valid); w.Code != 403 {
+		t.Fatalf("tenant generated codes: %d", w.Code)
+	}
+	if w := call("founder", strings.TrimSuffix(valid, "}")+`,"code":"CUSTOM"}`); w.Code != 400 {
+		t.Fatalf("client provided code accepted: %d %s", w.Code, w.Body.String())
+	}
+	if w := call("founder", valid); w.Code != 201 || !strings.Contains(w.Body.String(), `"codes"`) {
+		t.Fatalf("generation: %d %s", w.Code, w.Body.String())
+	}
+}
 
 type pricingStub struct{ saved *order.Prices }
 
@@ -26,6 +52,9 @@ func (p *pricingStub) Get(context.Context) (order.Prices, error) {
 }
 func (p *pricingStub) Put(_ context.Context, v order.Prices) error { p.saved = &v; return nil }
 func (p *pricingStub) Delete(context.Context) error                { p.saved = nil; return nil }
+func (p *pricingStub) StorageClasses(context.Context) ([]string, error) {
+	return []string{"fast", "slow"}, nil
+}
 func (p *pricingStub) Quote(_ context.Context, r order.Request) (int64, string, url.Values, error) {
 	if p.saved == nil {
 		return 0, "", nil, order.ErrPricingMissing
@@ -59,11 +88,21 @@ func TestPricingFounderGuardAndQuote(t *testing.T) {
 	if w := call("PUT", Prefix+"/pricing", "founder", body); w.Code != 200 {
 		t.Fatalf("founder pricing update: %d %s", w.Code, w.Body.String())
 	}
+	if w := call("GET", Prefix+"/storage-classes", "tenant", ""); w.Code != 403 {
+		t.Fatalf("tenant listed storage classes: %d", w.Code)
+	}
+	if w := call("GET", Prefix+"/storage-classes", "founder", ""); w.Code != 200 || !strings.Contains(w.Body.String(), "fast") {
+		t.Fatalf("storage classes: %d %s", w.Code, w.Body.String())
+	}
+	classBody := strings.TrimSuffix(body, "}") + `,"storageClassName":"fast"}`
+	if w := call("PUT", Prefix+"/pricing", "founder", classBody); w.Code != 200 || pricing.saved.StorageClassName != "fast" {
+		t.Fatalf("storage class pricing update: %d %s", w.Code, w.Body.String())
+	}
 	combination := `{"quantity":1,"unit":"month","cpu":2,"memoryGi":4,"storageGi":20,"bandwidthMbps":5,"discountNew":80,"discountRenew":90}`
 	if w := call("PUT", Prefix+"/pricing", "founder", strings.TrimSuffix(body, "}")+`,"combinations":[`+combination+`]}`); w.Code != 200 {
 		t.Fatalf("combination pricing update: %d %s", w.Code, w.Body.String())
 	}
-	if w := call("PUT", Prefix+"/pricing", "founder", body); w.Code != 200 || len(pricing.saved.Combinations) != 1 {
+	if w := call("PUT", Prefix+"/pricing", "founder", body); w.Code != 200 || len(pricing.saved.Combinations) != 1 || pricing.saved.StorageClassName != "fast" {
 		t.Fatalf("legacy pricing update lost combinations: %d %s", w.Code, w.Body.String())
 	}
 	if w := call("POST", Prefix+"/orders/quote", "tenant", `{"kind":"csm","action":"buy","name":"host","cpu":2}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"amountCents":200`) {
@@ -198,18 +237,24 @@ func (b *backendStub) Action(_ context.Context, kind, ns, name, action string, _
 
 type gatewayStub struct{}
 
-type purchaseGateway struct{ gatewayStub }
+type purchaseGateway struct {
+	gatewayStub
+	last order.Request
+}
 
-func (purchaseGateway) Create(context.Context, order.Request) (order.Payment, error) {
+func (g *purchaseGateway) Create(_ context.Context, r order.Request) (order.Payment, error) {
+	g.last = r
 	return order.Payment{OrderSn: "SN", NeedPay: true, AmountCents: 100}, nil
 }
 
 func TestPurchaseNameGeneratedByServer(t *testing.T) {
+	gateway := &purchaseGateway{}
 	server := NewServer(func(context.Context, string) (Identity, error) {
 		return Identity{Namespace: "tenant-a"}, nil
-	}, &backendStub{missing: true}, order.Service{Gateway: purchaseGateway{}, Store: storeStub{}}, "")
+	}, &backendStub{missing: true}, order.Service{Gateway: gateway, Store: storeStub{}}, "")
+	server.Pricing = &pricingStub{saved: &order.Prices{StorageClassName: "fast"}}
 	for _, tc := range []struct{ kind, body string }{
-		{"csm", `{"kind":"csm","action":"buy","name":"client-name","templateName":"ubuntu","cpu":2,"memoryGi":4,"storageGi":40,"bandwidthMbps":5,"quantity":1,"unit":"month"}`},
+		{"csm", `{"kind":"csm","action":"buy","name":"client-name","storageClassName":"slow","templateName":"ubuntu","cpu":2,"memoryGi":4,"storageGi":40,"bandwidthMbps":5,"quantity":1,"unit":"month"}`},
 		{"dataDisk", `{"kind":"dataDisk","action":"buy","storageGi":10,"quantity":1,"unit":"month"}`},
 	} {
 		req := httptest.NewRequest(http.MethodPost, Prefix+"/orders", strings.NewReader(tc.body))
@@ -217,7 +262,7 @@ func TestPurchaseNameGeneratedByServer(t *testing.T) {
 		w := httptest.NewRecorder()
 		server.Handler().ServeHTTP(w, req)
 		var result order.Record
-		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &result) != nil || !regexp.MustCompile(`^ckm-\d{5}$`).MatchString(result.Name) || result.Kind != tc.kind {
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &result) != nil || !regexp.MustCompile(`^ckm-\d{5}$`).MatchString(result.Name) || result.Kind != tc.kind || result.StorageClassName != "fast" || gateway.last.StorageClassName != "fast" {
 			t.Fatalf("%s purchase: %d %s", tc.kind, w.Code, w.Body.String())
 		}
 	}

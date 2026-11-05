@@ -177,6 +177,16 @@ func TestApplySpecExpansionAndRenewal(t *testing.T) {
 		t.Fatal(spec)
 	}
 }
+
+func TestBuyStorageClassPersistsOnResource(t *testing.T) {
+	for _, kind := range []string{"csm", "dataDisk"} {
+		spec := map[string]any{}
+		req := Request{Kind: kind, Action: "buy", StorageGi: 10, StorageClassName: "fast", Quantity: 1, Unit: "month"}
+		if err := applySpec(spec, Record{Request: req}); err != nil || spec["storageClassName"] != "fast" {
+			t.Fatalf("%s class: %v, %v", kind, spec, err)
+		}
+	}
+}
 func TestW7GatewayChecksRequestAndResponse(t *testing.T) {
 	calls := 0
 	cloud := `{"ip_order_status":"paid","ip_order_sn":"SN-1","buymode":"base","hour":"720.00","cpu":2,"memory":4,"storage":40,"bandwidth":5,"ckm_name":"host-a"}`
