@@ -101,7 +101,7 @@ function addJumpKey() {
       <template v-else-if="cloudInitExecution">
         <p class="host-section-note">状态：{{ display(cloudInitExecution.status?.phase) }}</p>
         <p v-if="cloudInitExecution.status?.message" class="host-section-note" role="alert">{{ cloudInitExecution.status.message }}</p>
-        <pre v-if="cloudInitExecution.status?.log" class="host-command mono">{{ cloudInitExecution.status.log }}</pre>
+        <pre v-if="cloudInitExecution.status?.log" class="host-command host-cloud-init-log mono">{{ cloudInitExecution.status.log }}</pre>
         <p v-else class="host-section-note">暂无执行日志；cloud-init 结束后刷新状态查看。</p>
       </template>
       <p v-else class="host-section-note">暂无执行记录。</p>
@@ -152,6 +152,7 @@ cat ~/.ssh/csm-218.pub</pre>
 .host-columns{display:block}.host-connection-guide{margin-top:16px}.host-connection-guide summary{cursor:pointer;color:rgb(var(--primary-6,22,93,255))}.host-command{max-width:900px;margin:16px 0;padding:12px;background:var(--color-fill-2,#f2f3f5);white-space:pre-wrap;overflow-wrap:anywhere}.host-key-form{max-width:720px;margin-top:20px}.host-key-form button{margin-top:12px}.host-section-note{color:var(--color-text-2,#4e5969)}.host-upgrade{display:flex;align-items:end;gap:12px;max-width:560px;margin-top:24px}.host-upgrade label{flex:1;min-width:0}.host-upgrade button{flex:none}
 .host-pods-heading{margin:20px 0 12px;font-size:16px}.host-pods{display:grid;gap:12px}.host-pod{min-width:0;padding:12px;border:1px solid var(--color-border-2,#e5e6eb)}.host-pod-heading{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.host-pod-heading strong{min-width:0;overflow-wrap:anywhere}.host-pod-facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:12px 0 0}.host-pod-facts>div{min-width:0}.host-pod-facts dt{color:var(--color-text-2,#4e5969)}.host-pod-facts dd{margin:4px 0 0;overflow-wrap:anywhere}
 .host-pod-actions{display:flex;gap:8px;margin-top:12px}.host-events{display:grid;gap:12px;max-height:60vh;overflow:auto}.host-events article{padding:12px;border:1px solid var(--color-border-2,#e5e6eb);overflow-wrap:anywhere}.host-events p{margin:8px 0}.host-events small{color:var(--color-text-2,#4e5969)}
+.host-cloud-init-log{box-sizing:border-box;max-width:100%;max-height:400px;overflow:auto;background:#111827;color:#e5e7eb;white-space:pre;overflow-wrap:normal}
 @media(max-width:800px){.host-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.host-heading{align-items:stretch;flex-direction:column}.host-heading-actions>*{flex:1}.host-detail-page button,.host-detail-page select{min-height:44px}.host-section{padding:16px}.host-facts{grid-template-columns:1fr}.host-facts>div{grid-template-columns:100px minmax(0,1fr)}.host-pod-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.host-upgrade{align-items:stretch;flex-direction:column}.host-upgrade button{align-self:flex-start}}
 </style>

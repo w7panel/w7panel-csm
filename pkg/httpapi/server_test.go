@@ -282,7 +282,7 @@ func TestPurchaseNameGeneratedByServer(t *testing.T) {
 		w := httptest.NewRecorder()
 		server.Handler().ServeHTTP(w, req)
 		var result order.Record
-		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &result) != nil || !regexp.MustCompile(`^ckm-\d{5}$`).MatchString(result.Name) || result.Kind != tc.kind || result.StorageClassName != "fast" || gateway.last.StorageClassName != "fast" {
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &result) != nil || !regexp.MustCompile(`^csm-\d{5}$`).MatchString(result.Name) || result.Kind != tc.kind || result.StorageClassName != "fast" || gateway.last.StorageClassName != "fast" {
 			t.Fatalf("%s purchase: %d %s", tc.kind, w.Code, w.Body.String())
 		}
 	}

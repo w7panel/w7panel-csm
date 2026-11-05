@@ -623,7 +623,7 @@ func (s *Server) createOrder(w http.ResponseWriter, r *http.Request) {
 				writeResult(w, nil, err)
 				return
 			}
-			req.Name = fmt.Sprintf("ckm-%05d", n.Int64())
+			req.Name = fmt.Sprintf("csm-%05d", n.Int64())
 			if _, err := s.Backend.Get(r.Context(), kind, ns, req.Name); errors.Is(err, ErrNotFound) {
 				break
 			} else if err != nil {
