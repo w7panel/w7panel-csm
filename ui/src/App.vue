@@ -39,6 +39,8 @@ const filteredHosts = computed(() => filterHosts(rows.value, hostUsernameSearch.
 const selected = ref(null)
 const hostRuntime = ref(null)
 const hostRuntimeError = ref('')
+const hostCloudInitExecution = ref(null)
+const hostCloudInitError = ref('')
 const templates = ref([])
 const appRows = ref([])
 function newCsmOrder() { return { kind: 'csm', action: 'buy', name: '', templateName: '', cpu: 2, memoryGi: 4, storageGi: 40, bandwidthMbps: 5, quantity: 1, unit: 'month', couponCode: '' } }
@@ -352,12 +354,19 @@ async function loadHost(name) {
   error.value = ''; hostLoading.value = true
   const namespace = hostRouteNamespace.value
   hostRuntime.value = null; hostRuntimeError.value = ''
+  hostCloudInitExecution.value = null; hostCloudInitError.value = ''
   try {
     const host = await api(hostPath(name, '', namespace))
     if (hostRouteName.value !== name || hostRouteNamespace.value !== namespace) return
     selected.value = host; loadedHostNamespace.value = namespace
     try { const runtime = await api(hostPath(name, '/runtime', namespace)); if (hostRouteName.value === name && hostRouteNamespace.value === namespace) hostRuntime.value = runtime }
     catch (e) { if (hostRouteName.value === name && hostRouteNamespace.value === namespace) hostRuntimeError.value = e.message }
+    if (host.status?.initMode === 'cloudInit') {
+      try {
+        const executions = await api(`/preinstall-executions?namespace=${encodeURIComponent(host.metadata.namespace)}`)
+        if (hostRouteName.value === name && hostRouteNamespace.value === namespace) hostCloudInitExecution.value = items(executions).find(item => item.spec?.csmName === name && item.spec?.csmNamespace === host.metadata.namespace && item.spec?.initMode === 'cloudInit') || null
+      } catch (e) { if (hostRouteName.value === name && hostRouteNamespace.value === namespace) hostCloudInitError.value = e.message }
+    }
   }
   catch (e) { if (hostRouteName.value === name && hostRouteNamespace.value === namespace) { selected.value = null; error.value = e.message } }
   finally { if (hostRouteName.value === name && hostRouteNamespace.value === namespace) hostLoading.value = false }
@@ -610,7 +619,7 @@ onUnmounted(() => { window.removeEventListener('message', onPaymentMessage); if 
         <div v-if="!loading && rows.length === 0" class="empty">暂无记录。</div>
         <div v-else class="table-wrap execution-table"><table><thead><tr><th>名称 / 订单号</th><th>状态</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td class="mono">{{ nameOf(row) }}<details v-if="row.status?.log"><summary>初始化日志</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">{{ row.status.log }}</pre></details></td><td><span class="status">{{ phaseOf(row) }}</span></td></tr></tbody></table></div>
       </section>
-      <HostDetail v-if="section === 'hosts' && hostRouteName && !terminalPage && selected" :host="selected" :runtime="hostRuntime" :runtime-error="hostRuntimeError" :versions="versions" :ssh-host="sshHost" :loading="hostLoading" @refresh="loadHost(hostRouteName)" @preinstall="run(hostPath(hostRouteName, '/preinstall'))" @upgrade="versionName => run(hostPath(hostRouteName, '/upgrade'), { versionName })" @terminal="openTerminal" @delete="deleteHost(selected)" @add-key="async (publicKey, done) => { if ((await run(hostPath(hostRouteName, '/ssh-keys'), { publicKey })) !== undefined) done() }" @add-jump-key="async (publicKey, done) => { if ((await run(hostPath(hostRouteName, '/jump-keys'), { publicKey })) !== undefined) done() }" />
+      <HostDetail v-if="section === 'hosts' && hostRouteName && !terminalPage && selected" :host="selected" :runtime="hostRuntime" :runtime-error="hostRuntimeError" :cloud-init-execution="hostCloudInitExecution" :cloud-init-error="hostCloudInitError" :versions="versions" :ssh-host="sshHost" :loading="hostLoading" @refresh="loadHost(hostRouteName)" @preinstall="run(hostPath(hostRouteName, '/preinstall'))" @upgrade="versionName => run(hostPath(hostRouteName, '/upgrade'), { versionName })" @terminal="openTerminal" @delete="deleteHost(selected)" @add-key="async (publicKey, done) => { if ((await run(hostPath(hostRouteName, '/ssh-keys'), { publicKey })) !== undefined) done() }" @add-jump-key="async (publicKey, done) => { if ((await run(hostPath(hostRouteName, '/jump-keys'), { publicKey })) !== undefined) done() }" />
       <section v-else-if="section === 'hosts' && hostRouteName && !terminalPage && hostLoading" class="panel"><p class="hint">正在加载主机详情…</p></section>
       <section v-if="selected && section === 'disks'" class="panel detail"><div class="panel-head"><h2>{{ nameOf(selected) }}</h2><button class="text" @click="selected = null">关闭</button></div><dl><dt>容量</dt><dd>{{ selected.spec?.storageGi || 0 }} GiB</dd><dt>到期时间</dt><dd>{{ dateText(selected.spec?.expireTime) }}</dd><dt>PVC</dt><dd>{{ selected.status?.pvcName || '待创建' }}</dd><dt>挂载路径</dt><dd>{{ selected.spec?.attached ? selected.spec?.mountPath || '—' : '未挂载' }}</dd></dl><div class="actions" v-if="selected.spec?.paid"><template v-if="!selected.spec?.attached && selected.status?.phase === 'Available'"><label>目标主机<select v-model="mountTarget"><option value="">选择主机</option><option v-for="host in mountHosts.filter(host => host.spec?.paid)" :key="nameOf(host)" :value="nameOf(host)">{{ nameOf(host) }}</option></select></label><button class="light" :disabled="!mountTarget" @click="run(`/data-disks/${encodeURIComponent(nameOf(selected))}/mount`, { csmName: mountTarget })">挂载</button></template><button v-if="selected.spec?.attached" class="light" @click="unmountDisk(selected)">卸载</button></div></section>
       <TerminalModal v-if="hostRouteName" :visible="terminalOpen || terminalPage" :page="terminalPage" :name="hostRouteName" :namespace="hostRouteNamespace" @close="closeTerminal" />

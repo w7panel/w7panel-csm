@@ -1,12 +1,25 @@
 <script setup>
 import { computed, ref } from 'vue'
+import { api } from './api'
 
-const props = defineProps({ host: { type: Object, required: true }, runtime: { type: Object, default: null }, runtimeError: { type: String, default: '' }, versions: { type: Array, required: true }, sshHost: { type: String, default: '' }, loading: Boolean })
+const props = defineProps({ host: { type: Object, required: true }, runtime: { type: Object, default: null }, runtimeError: { type: String, default: '' }, cloudInitExecution: { type: Object, default: null }, cloudInitError: { type: String, default: '' }, versions: { type: Array, required: true }, sshHost: { type: String, default: '' }, loading: Boolean })
 const emit = defineEmits(['refresh', 'preinstall', 'upgrade', 'terminal', 'add-key', 'add-jump-key', 'delete'])
 const upgradeTarget = ref('')
 const publicKey = ref('')
 const jumpKey = ref('')
 const copyMessage = ref('')
+const podViewer = ref(null)
+async function openPodViewer(pod, kind) {
+  podViewer.value = { name: pod.name, kind, loading: true, error: '', log: '', events: [] }
+  const viewer = podViewer.value
+  try {
+    const namespace = props.host.metadata.namespace
+    const path = `/csms/${encodeURIComponent(props.host.metadata.name)}/pods/${encodeURIComponent(pod.name)}/${kind}?namespace=${encodeURIComponent(namespace)}`
+    const data = await api(path)
+    if (podViewer.value === viewer) Object.assign(viewer, kind === 'logs' ? { log: data.log } : { events: data.events || [] })
+  } catch (e) { if (podViewer.value === viewer) viewer.error = e.message }
+  finally { if (podViewer.value === viewer) viewer.loading = false }
+}
 const sshCommand = computed(() => `ssh -p ${props.host.status?.sshPort} -i ~/.ssh/csm-218 root+${props.host.status?.sshHost}@${props.sshHost}`)
 const sshConfig = computed(() => `Host csm-${props.host.metadata?.name}
   HostName ${props.sshHost}
@@ -67,10 +80,31 @@ function addJumpKey() {
           <article v-for="pod in runtime.pods" :key="pod.name" class="host-pod">
             <div class="host-pod-heading"><strong class="mono">{{ pod.name }}</strong><span class="status">{{ display(pod.phase) }}</span></div>
             <dl class="host-pod-facts"><div><dt>Ready</dt><dd>{{ pod.ready }} / {{ pod.total }}</dd></div><div><dt>IP</dt><dd class="mono">{{ display(pod.ip) }}</dd></div><div><dt>节点</dt><dd class="mono">{{ display(pod.node) }}</dd></div><div><dt>重启</dt><dd>{{ pod.restarts }}</dd></div></dl>
+            <div class="host-pod-actions"><button class="light" @click="openPodViewer(pod, 'logs')">日志</button><button class="light" @click="openPodViewer(pod, 'events')">事件</button></div>
           </article>
         </div>
         <p v-else class="host-section-note">暂无关联 Pod。</p>
       </template>
+    </section>
+
+    <a-modal :visible="!!podViewer" :title="`${podViewer?.name || 'Pod'} · ${podViewer?.kind === 'logs' ? '日志' : '事件'}`" width="min(900px, calc(100vw - 24px))" :footer="false" :unmount-on-close="true" @cancel="podViewer = null">
+      <p v-if="podViewer?.loading" class="host-section-note">正在读取…</p>
+      <p v-else-if="podViewer?.error" class="host-section-note" role="alert">{{ podViewer.error }}</p>
+      <pre v-else-if="podViewer?.kind === 'logs'" class="host-command mono">{{ podViewer.log || '暂无日志' }}</pre>
+      <div v-else-if="podViewer?.events?.length" class="host-events"><article v-for="event in podViewer.events" :key="event.metadata?.uid || event.metadata?.name"><strong>{{ event.type || '事件' }} · {{ event.reason || '—' }}</strong><p>{{ event.message || '—' }}</p><small>{{ dateText(event.lastTimestamp || event.eventTime || event.metadata?.creationTimestamp) }} · {{ event.count || 1 }} 次</small></article></div>
+      <p v-else class="host-section-note">暂无事件。</p>
+    </a-modal>
+
+    <section v-if="host.status?.initMode === 'cloudInit'" class="host-section" aria-labelledby="host-cloud-init-heading">
+      <h2 id="host-cloud-init-heading">cloud-init 执行日志</h2>
+      <p v-if="cloudInitError" class="host-section-note" role="alert">日志读取失败：{{ cloudInitError }}</p>
+      <template v-else-if="cloudInitExecution">
+        <p class="host-section-note">状态：{{ display(cloudInitExecution.status?.phase) }}</p>
+        <p v-if="cloudInitExecution.status?.message" class="host-section-note" role="alert">{{ cloudInitExecution.status.message }}</p>
+        <pre v-if="cloudInitExecution.status?.log" class="host-command mono">{{ cloudInitExecution.status.log }}</pre>
+        <p v-else class="host-section-note">暂无执行日志；cloud-init 结束后刷新状态查看。</p>
+      </template>
+      <p v-else class="host-section-note">暂无执行记录。</p>
     </section>
 
     <div class="host-columns">
@@ -117,6 +151,7 @@ cat ~/.ssh/csm-218.pub</pre>
 .host-section{min-width:0;margin-bottom:16px;padding:20px;background:var(--color-bg-2,#fff)}.host-section h2{margin-bottom:12px}.host-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.host-metrics>div{min-width:0;padding:4px 0}.host-metrics span{display:block;color:var(--color-text-2,#4e5969)}.host-metrics strong{display:block;margin-top:6px;font-size:18px;overflow-wrap:anywhere}.host-metrics small{font-size:13px;font-weight:400}.host-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 24px;margin:16px 0 0}.host-facts>div{display:grid;grid-template-columns:110px minmax(0,1fr);gap:12px;padding:12px 0;border-bottom:1px solid var(--color-border-2,#e5e6eb)}.host-facts dt{color:var(--color-text-2,#4e5969)}.host-facts dd{min-width:0;margin:0;overflow-wrap:anywhere}
 .host-columns{display:block}.host-connection-guide{margin-top:16px}.host-connection-guide summary{cursor:pointer;color:rgb(var(--primary-6,22,93,255))}.host-command{max-width:900px;margin:16px 0;padding:12px;background:var(--color-fill-2,#f2f3f5);white-space:pre-wrap;overflow-wrap:anywhere}.host-key-form{max-width:720px;margin-top:20px}.host-key-form button{margin-top:12px}.host-section-note{color:var(--color-text-2,#4e5969)}.host-upgrade{display:flex;align-items:end;gap:12px;max-width:560px;margin-top:24px}.host-upgrade label{flex:1;min-width:0}.host-upgrade button{flex:none}
 .host-pods-heading{margin:20px 0 12px;font-size:16px}.host-pods{display:grid;gap:12px}.host-pod{min-width:0;padding:12px;border:1px solid var(--color-border-2,#e5e6eb)}.host-pod-heading{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.host-pod-heading strong{min-width:0;overflow-wrap:anywhere}.host-pod-facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:12px 0 0}.host-pod-facts>div{min-width:0}.host-pod-facts dt{color:var(--color-text-2,#4e5969)}.host-pod-facts dd{margin:4px 0 0;overflow-wrap:anywhere}
+.host-pod-actions{display:flex;gap:8px;margin-top:12px}.host-events{display:grid;gap:12px;max-height:60vh;overflow:auto}.host-events article{padding:12px;border:1px solid var(--color-border-2,#e5e6eb);overflow-wrap:anywhere}.host-events p{margin:8px 0}.host-events small{color:var(--color-text-2,#4e5969)}
 @media(max-width:800px){.host-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.host-heading{align-items:stretch;flex-direction:column}.host-heading-actions>*{flex:1}.host-detail-page button,.host-detail-page select{min-height:44px}.host-section{padding:16px}.host-facts{grid-template-columns:1fr}.host-facts>div{grid-template-columns:100px minmax(0,1fr)}.host-pod-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.host-upgrade{align-items:stretch;flex-direction:column}.host-upgrade button{align-self:flex-start}}
 </style>
