@@ -3,6 +3,8 @@ import { nextTick, onUnmounted, ref, watch } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
+import { api } from './api'
+import { terminalConnection } from './terminalConnection'
 
 const props = defineProps({ visible: Boolean, page: Boolean, name: { type: String, required: true }, namespace: { type: String, default: '' } })
 const emit = defineEmits(['close'])
@@ -12,6 +14,7 @@ let terminal
 let fit
 let socket
 let resizeObserver
+let connectionId = 0
 
 function send(channel, value) {
   if (socket?.readyState !== WebSocket.OPEN) return
@@ -26,6 +29,7 @@ function resize() {
   if (terminal) send(4, JSON.stringify({ Width: terminal.cols, Height: terminal.rows }))
 }
 function disconnect() {
+  connectionId++
   if (socket) { socket.onopen = socket.onmessage = socket.onerror = socket.onclose = null; socket.close(); socket = null }
 }
 function dispose() {
@@ -36,17 +40,18 @@ function dispose() {
   terminal = null
   fit = null
 }
-function connect() {
+async function connect() {
   disconnect()
+  const current = connectionId
   terminal?.reset()
   message.value = ''
+  try { await api('/session') }
+  catch (error) { if (current === connectionId) message.value = error.message; return }
+  if (!props.visible || current !== connectionId) return
   const token = localStorage.getItem('csm-token')
   if (!token) { message.value = '请先登录后打开终端'; return }
-  const base = window.$wujie?.props?.url || window.location.origin
-  const url = new URL(`/csm-api/v1/csms/${encodeURIComponent(props.name)}/terminal`, base)
-  if (props.namespace) url.searchParams.set('namespace', props.namespace)
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-  socket = new WebSocket(url, ['v4.channel.k8s.io', `bearer.${token}`])
+  const { url, protocols } = terminalConnection(props.name, props.namespace, token, window.$wujie?.props)
+  socket = new WebSocket(url, protocols)
   socket.binaryType = 'arraybuffer'
   socket.onopen = () => { terminal?.focus(); resize() }
   socket.onmessage = event => {

@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue'
-import { api, items } from './api'
+import { api, items, newestFirst } from './api'
 import TemplateAppFields from './TemplateAppFields.vue'
 import { deploymentToTemplateApp, emptyApp, normalizeApp, templateToDeployment, validateApp } from './templateApp'
 
@@ -17,7 +17,7 @@ defineExpose({ openCreate: () => open() })
 async function open(row) {
   error.value = ''
   try {
-    applications.value = items(await api('/preinstall-applications'))
+    applications.value = newestFirst(items(await api('/preinstall-applications')))
     editor.value = row ? {
       name: row.metadata.name,
       resourceVersion: row.metadata.resourceVersion,

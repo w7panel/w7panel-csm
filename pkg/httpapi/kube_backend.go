@@ -198,6 +198,31 @@ func (b KubeBackend) Action(ctx context.Context, kind, namespace, name, action s
 			return nil, ErrConflict
 		}
 		return b.delete(ctx, kind, namespace, name)
+	case kind == "csms" && action == "delete":
+		if _, err := b.object(ctx, kind, namespace, name); err != nil {
+			return nil, err
+		}
+		data, err := b.List(ctx, "data-disks", namespace)
+		if err != nil {
+			return nil, err
+		}
+		var disks struct {
+			Items []struct {
+				Spec struct {
+					CsmName  string `json:"csmName"`
+					Attached bool   `json:"attached"`
+				} `json:"spec"`
+			} `json:"items"`
+		}
+		if err := json.Unmarshal(data, &disks); err != nil {
+			return nil, err
+		}
+		for _, disk := range disks.Items {
+			if disk.Spec.Attached && disk.Spec.CsmName == name {
+				return nil, ErrConflict
+			}
+		}
+		return b.delete(ctx, kind, namespace, name)
 	case kind == "csms" && action == "preinstall":
 		return b.createExecution(ctx, namespace, name, "preinstall", body)
 	case kind == "csms" && action == "upgrade":

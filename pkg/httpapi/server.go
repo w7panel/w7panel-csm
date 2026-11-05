@@ -78,6 +78,7 @@ func (s *Server) Handler() http.Handler {
 	}
 	route("GET", "/csms", s.list("csms"))
 	route("GET", "/csms/{name}", s.get("csms"))
+	route("DELETE", "/csms/{name}", s.action("csms", "delete"))
 	route("GET", "/csms/{name}/runtime", s.hostRuntime)
 	route("POST", "/csms/{name}/preinstall", s.action("csms", "preinstall"))
 	route("POST", "/csms/{name}/upgrade", s.action("csms", "upgrade"))

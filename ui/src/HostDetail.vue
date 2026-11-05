@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 
 const props = defineProps({ host: { type: Object, required: true }, runtime: { type: Object, default: null }, runtimeError: { type: String, default: '' }, versions: { type: Array, required: true }, sshHost: { type: String, default: '' }, loading: Boolean })
-const emit = defineEmits(['refresh', 'preinstall', 'upgrade', 'terminal', 'add-key', 'add-jump-key'])
+const emit = defineEmits(['refresh', 'preinstall', 'upgrade', 'terminal', 'add-key', 'add-jump-key', 'delete'])
 const upgradeTarget = ref('')
 const publicKey = ref('')
 const jumpKey = ref('')
@@ -41,7 +41,7 @@ function addJumpKey() {
         <strong class="host-name">{{ name(host) }}</strong><span class="status">{{ display(host.status?.phase) }}</span>
         <p>{{ host.metadata?.namespace || '默认命名空间' }} <span v-if="host.status?.message">· {{ host.status.message }}</span></p>
       </div>
-      <div class="host-heading-actions"><button class="light" :disabled="loading" @click="emit('refresh')">{{ loading ? '刷新中…' : '刷新状态' }}</button><button class="primary" @click="emit('terminal')">打开终端</button></div>
+      <div class="host-heading-actions"><button class="light" :disabled="loading" @click="emit('refresh')">{{ loading ? '刷新中…' : '刷新状态' }}</button><button class="primary" @click="emit('terminal')">打开终端</button><button class="text danger" :disabled="loading" @click="emit('delete')">删除主机</button></div>
     </section>
 
     <section class="host-section" aria-labelledby="host-resource-heading">

@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue'
-import { api, items } from './api'
+import { api, items, newestFirst } from './api'
 
 defineProps({ rows: { type: Array, required: true }, loading: Boolean })
 const emit = defineEmits(['saved'])
@@ -21,7 +21,7 @@ const formError = ref('')
 async function openCreate() {
   error.value = ''
   formError.value = ''
-  try { templates.value = items(await api('/system-templates')); draft.value = { name: '', templateName: '', version: '' }; creating.value = true }
+  try { templates.value = newestFirst(items(await api('/system-templates'))); draft.value = { name: '', templateName: '', version: '' }; creating.value = true }
   catch (e) { error.value = e.message }
 }
 async function createVersion() {
@@ -44,8 +44,8 @@ async function openView(row, next) {
   selected.value = row; view.value = next; policyForm.value = null; policyDrawerOpen.value = false; error.value = ''
   policies.value = []; executions.value = []
   try {
-    if (next === 'policies') policies.value = items(await api('/upgrade-policies')).filter(item => item.spec?.versionName === row.metadata.name)
-    else executions.value = items(await api('/upgrade-executions')).filter(item => item.spec?.versionName === row.metadata.name)
+    if (next === 'policies') policies.value = newestFirst(items(await api('/upgrade-policies')).filter(item => item.spec?.versionName === row.metadata.name))
+    else executions.value = newestFirst(items(await api('/upgrade-executions')).filter(item => item.spec?.versionName === row.metadata.name))
   } catch (e) { error.value = e.message }
 }
 function editPolicy(row) {

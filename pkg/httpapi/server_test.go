@@ -215,6 +215,26 @@ type backendStub struct {
 	missing   bool
 }
 
+func TestHostDeleteUsesAuthorizedNamespace(t *testing.T) {
+	backend := &backendStub{}
+	server := NewServer(func(_ context.Context, token string) (Identity, error) {
+		return Identity{Namespace: "csm-alice", Founder: token == "founder"}, nil
+	}, backend, order.Service{Gateway: gatewayStub{}, Store: storeStub{}}, "")
+	call := func(token string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodDelete, Prefix+"/csms/host?namespace=csm-bob", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		server.Handler().ServeHTTP(w, req)
+		return w
+	}
+	if w := call("tenant"); w.Code != 200 || backend.namespace != "csm-alice" {
+		t.Fatalf("tenant delete namespace: %d %s", w.Code, backend.namespace)
+	}
+	if w := call("founder"); w.Code != 200 || backend.namespace != "csm-bob" {
+		t.Fatalf("founder delete namespace: %d %s", w.Code, backend.namespace)
+	}
+}
+
 func (b *backendStub) List(_ context.Context, kind, ns string) (json.RawMessage, error) {
 	b.namespace = ns
 	return json.RawMessage(`{"items":[]}`), nil

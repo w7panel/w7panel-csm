@@ -53,6 +53,33 @@ func TestHostListPathAllowsAllNamespacesButHostGetRequiresNamespace(t *testing.T
 	}
 }
 
+func TestDeleteHostRequiresAttachedDisksToBeDetached(t *testing.T) {
+	attached := true
+	deleted := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/apis/csm.w7.cc/v1alpha1/namespaces/tenant/csms/host":
+			w.Write([]byte(`{"spec":{"paid":true}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/apis/csm.w7.cc/v1alpha1/namespaces/tenant/datadisks":
+			json.NewEncoder(w).Encode(map[string]any{"items": []any{map[string]any{"spec": map[string]any{"csmName": "host", "attached": attached}}}})
+		case r.Method == http.MethodDelete && r.URL.Path == "/apis/csm.w7.cc/v1alpha1/namespaces/tenant/csms/host":
+			deleted = true
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	b := KubeBackend{BaseURL: server.URL, Client: server.Client()}
+	if _, err := b.Action(t.Context(), "csms", "tenant", "host", "delete", nil); !errors.Is(err, ErrConflict) || deleted {
+		t.Fatalf("attached disk allowed host deletion: %v, deleted=%v", err, deleted)
+	}
+	attached = false
+	if _, err := b.Action(t.Context(), "csms", "tenant", "host", "delete", nil); err != nil || !deleted {
+		t.Fatalf("detached host deletion: %v, deleted=%v", err, deleted)
+	}
+}
+
 func TestAttachKeyUpdatesHost(t *testing.T) {
 	const key = "ssh-ed25519 YWJj local"
 	var saved struct {

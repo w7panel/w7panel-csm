@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,13 +20,14 @@ import (
 const CouponConfigMap = "w7panel-csm-coupons"
 
 type Coupon struct {
-	Code      string    `json:"code"`
-	Kind      string    `json:"kind"`
-	Action    string    `json:"action"`
-	Discount  int64     `json:"discount"`
-	ExpiresAt time.Time `json:"expiresAt"`
-	Status    string    `json:"status"`
-	OrderSn   string    `json:"orderSn,omitempty"`
+	Code      string     `json:"code"`
+	Kind      string     `json:"kind"`
+	Action    string     `json:"action"`
+	Discount  int64      `json:"discount"`
+	ExpiresAt time.Time  `json:"expiresAt"`
+	CreatedAt *time.Time `json:"createdAt,omitempty"`
+	Status    string     `json:"status"`
+	OrderSn   string     `json:"orderSn,omitempty"`
 }
 
 type KubeCoupons struct {
@@ -90,6 +92,18 @@ func (s KubeCoupons) List(ctx context.Context) ([]Coupon, error) {
 		}
 		items = append(items, item)
 	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].CreatedAt == nil || items[j].CreatedAt == nil {
+			if items[i].CreatedAt == nil && items[j].CreatedAt == nil {
+				return items[i].Code > items[j].Code
+			}
+			return items[i].CreatedAt != nil
+		}
+		if items[i].CreatedAt.Equal(*items[j].CreatedAt) {
+			return items[i].Code > items[j].Code
+		}
+		return items[i].CreatedAt.After(*items[j].CreatedAt)
+	})
 	return items, nil
 }
 
@@ -100,6 +114,8 @@ func (s KubeCoupons) Create(ctx context.Context, item Coupon) error {
 	}
 	item.Status = "available"
 	item.OrderSn = ""
+	now := s.now()
+	item.CreatedAt = &now
 	for attempt := 0; attempt < 3; attempt++ {
 		cm, err := s.load(ctx)
 		if err != nil {
@@ -132,6 +148,8 @@ func (s KubeCoupons) Generate(ctx context.Context, item Coupon, count int) ([]st
 		return nil, ErrInvalid
 	}
 	item.Status, item.OrderSn = "available", ""
+	now := s.now()
+	item.CreatedAt = &now
 	for attempt := 0; attempt < 3; attempt++ {
 		cm, err := s.load(ctx)
 		if err != nil {

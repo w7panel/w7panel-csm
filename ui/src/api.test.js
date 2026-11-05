@@ -1,8 +1,19 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { api } from './api.js'
+import { api, newestFirst } from './api.js'
 
 const response = (status, body = {}) => ({ status, ok: status >= 200 && status < 300, json: async () => body })
+
+test('resource lists show newest records first without changing the source', () => {
+  const list = [
+    { metadata: { name: 'old', creationTimestamp: '2026-11-01T00:00:00Z' } },
+    { metadata: { name: 'unknown' } },
+    { metadata: { name: 'new', creationTimestamp: '2026-11-05T00:00:00Z' } },
+  ]
+  assert.deepEqual(newestFirst(list).map(item => item.metadata.name), ['new', 'old', 'unknown'])
+  assert.equal(list[0].metadata.name, 'old')
+  assert.deepEqual(newestFirst([{ createdAt: '2026-11-01T00:00:00Z' }, { createdAt: '2026-11-05T00:00:00Z' }]).map(item => item.createdAt), ['2026-11-05T00:00:00Z', '2026-11-01T00:00:00Z'])
+})
 
 test('concurrent expired requests refresh once and retry with the new token', async () => {
   const values = new Map([['csm-token', 'old'], ['csm-refresh-token', 'refresh']])

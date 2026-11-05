@@ -65,3 +65,5 @@ export async function api(path, options = {}) {
 }
 
 export const items = data => Array.isArray(data) ? data : data?.items || []
+export const newestFirst = list => [...list].sort((a, b) =>
+  (Date.parse(b.metadata?.creationTimestamp || b.createdAt || '') || 0) - (Date.parse(a.metadata?.creationTimestamp || a.createdAt || '') || 0))

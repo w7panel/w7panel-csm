@@ -18,4 +18,6 @@ test('CSM routes keep navigation and host names', async () => {
   assert.equal(router.currentRoute.value.meta.section, 'templates')
   await router.push('/versions')
   assert.equal(router.currentRoute.value.name, 'versions')
+  await router.push('/coupons')
+  assert.equal(router.currentRoute.value.name, 'coupons')
 })

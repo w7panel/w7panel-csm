@@ -7,12 +7,14 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 )
 
 func TestGenerateCoupons(t *testing.T) {
 	now := time.Date(2026, 11, 4, 0, 0, 0, 0, time.UTC)
-	coupons := KubeCoupons{Kube: fake.NewSimpleClientset(), Namespace: "default", Now: func() time.Time { return now }}
+	coupons := KubeCoupons{Kube: fake.NewSimpleClientset(&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: CouponConfigMap, Namespace: "default", ResourceVersion: "1"}, Data: map[string]string{}}), Namespace: "default", Now: func() time.Time { return now }}
 	item := Coupon{Code: "IGNORED", Kind: "csm", Action: "buy", Discount: 80, ExpiresAt: now.Add(time.Hour)}
 	for _, count := range []int{0, 101} {
 		if _, err := coupons.Generate(t.Context(), item, count); !errors.Is(err, ErrInvalid) {
@@ -33,6 +35,15 @@ func TestGenerateCoupons(t *testing.T) {
 			t.Fatalf("invalid or duplicate code: %s", code)
 		}
 		seen[code] = true
+	}
+	now = now.Add(time.Minute)
+	newCodes, err := coupons.Generate(t.Context(), item, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, err = coupons.List(t.Context())
+	if err != nil || len(listed) != 4 || listed[0].Code != newCodes[0] || listed[0].CreatedAt == nil {
+		t.Fatalf("newest coupon should be first: %v, %v", listed, err)
 	}
 }
 

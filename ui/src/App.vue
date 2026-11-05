@@ -1,7 +1,7 @@
 <script setup>
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { api, items } from './api'
+import { api, items, newestFirst } from './api'
 import { finishLogin, loginInMicroapp, startLogin } from './auth'
 import SystemTemplates from './SystemTemplates.vue'
 import UpgradeVersions from './UpgradeVersions.vue'
@@ -78,7 +78,6 @@ const versions = ref([])
 const payment = ref(null)
 const founder = ref(false)
 const purchaseFeaturesReady = ref(false)
-const couponsReady = ref(false)
 const accounts = ref([])
 const targetNamespace = ref('')
 const coupons = ref([])
@@ -119,7 +118,7 @@ const orderSearch = ref('')
 const appliedOrderSearch = ref('')
 const filteredOrders = computed(() => rows.value.filter(row => row.orderSn?.includes(appliedOrderSearch.value)))
 const mountHosts = ref([])
-const diskRows = computed(() => [
+const diskRows = computed(() => newestFirst([
   ...mountHosts.value.filter(host => host.status?.systemPVCName || Number(host.spec?.systemDiskGi) > 0).map(host => ({
     systemHost: host,
     metadata: host.metadata,
@@ -127,7 +126,7 @@ const diskRows = computed(() => [
     status: { pvcName: host.status?.systemPVCName },
   })),
   ...rows.value,
-])
+]))
 const draft = ref({ name: '', cloudConfig: '', shell: '', kind: 'cloud', order: 0, resourceVersion: '' })
 const cloudForm = ref(emptyCloudConfigForm())
 const cloudEditor = ref('form')
@@ -144,8 +143,8 @@ function openTerminal() {
 function closeTerminal() {
   terminalOpen.value = false
 }
-const title = computed(() => route.name === 'apps' ? '初始化配置' : section.value === 'purchase' ? '费用清单' : tabs.find(([id]) => id === section.value)?.[1] || '主机')
-const resource = { hosts: 'csms', templates: 'system-templates', preinstall: 'preinstall-executions', upgrade: 'upgrade-executions', orders: 'orders', disks: 'data-disks', apps: 'preinstall-applications', versions: 'upgrade-versions' }
+const title = computed(() => route.name === 'apps' ? '初始化配置' : section.value === 'purchase' ? '费用清单' : section.value === 'coupons' ? '优惠码' : tabs.find(([id]) => id === section.value)?.[1] || '主机')
+const resource = { hosts: 'csms', templates: 'system-templates', preinstall: 'preinstall-executions', upgrade: 'upgrade-executions', orders: 'orders', disks: 'data-disks', apps: 'preinstall-applications', versions: 'upgrade-versions', coupons: 'coupons' }
 
 async function login() {
   error.value = ''
@@ -181,6 +180,17 @@ async function deleteDisk(row) {
   if (!confirm(`确定删除数据盘 ${nameOf(row)}？盘内数据将永久丢失。`)) return
   try { await api(`/data-disks/${encodeURIComponent(nameOf(row))}`, { method: 'DELETE' }); selected.value = null; await load() }
   catch (e) { error.value = e.message }
+}
+async function deleteHost(row) {
+  const name = nameOf(row)
+  if (!confirm(`确定删除云主机 ${name}？系统盘数据将永久丢失。请先卸载已挂载的数据盘。`)) return
+  error.value = ''
+  try {
+    await api(hostPath(name, '', row.metadata?.namespace), { method: 'DELETE' })
+    if (hostRouteName.value === name) await router.push({ name: 'hosts' })
+    await load()
+    notice.value = `云主机 ${name} 已提交删除。`
+  } catch (e) { error.value = e.status === 409 ? '请先卸载挂载到该主机的数据盘，再删除主机。' : e.message }
 }
 function unmountDisk(row) {
   if (window.confirm('卸载会中断使用该盘的业务，确定继续？')) run(`/data-disks/${encodeURIComponent(nameOf(row))}/unmount`)
@@ -268,7 +278,7 @@ async function createCoupon() {
   couponSaving.value = true; couponError.value = ''; notice.value = ''
   try {
     const result = await api('/coupons', { method: 'POST', body: JSON.stringify({ ...couponDraft.value, count: Number(couponDraft.value.count), discount: Number(couponDraft.value.discount), expiresAt: new Date(couponDraft.value.expiresAt).toISOString() }) })
-    coupons.value = items(await api('/coupons'))
+    coupons.value = newestFirst(items(await api('/coupons')))
     couponDrawerOpen.value = false
     notice.value = `已生成 ${result.codes.length} 个优惠码，可在下方列表查看。`
   } catch (e) { couponError.value = e.message }
@@ -297,8 +307,7 @@ async function load() {
     if (currentSection === 'disks') requests.push(api('/csms'))
     const [list, extra, prices] = await Promise.all(requests)
     if (sequence !== loadSequence) return
-    rows.value = items(list)
-    if (currentSection === 'orders') rows.value.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    rows.value = newestFirst(items(list))
     if (currentSection === 'purchase') {
       templates.value = items(extra).filter(item => item.spec?.initMode === 'cloudInit')
       purchasePrices.value = prices
@@ -313,21 +322,19 @@ async function load() {
       else if (session.founder && !listedAccounts) notice.value = 'CSM 服务端版本尚未更新，目标账户选择暂不可用。'
       scheduleQuote()
     }
+    if (currentSection === 'coupons') coupons.value = rows.value
     if (currentSection === 'pricing') {
       pricing.value = Object.fromEntries(pricingFields.map(([field]) => [field, extra ? (extra[field] / 100).toFixed(2) : '']))
       pricingCombinations.value = extra?.combinations?.map(item => ({ ...item })) || []
       pricingStorageClassName.value = extra?.storageClassName || ''
       const session = await optionalFeature('/session')
       founder.value = !!session?.founder
-      const [listedCoupons, listedClasses] = founder.value ? await Promise.all([optionalFeature('/coupons'), optionalFeature('/storage-classes')]) : [null, null]
-      couponsReady.value = !!listedCoupons
-      coupons.value = items(listedCoupons)
+      const listedClasses = founder.value ? await optionalFeature('/storage-classes') : null
       storageClassesReady.value = !!listedClasses
       storageClasses.value = items(listedClasses)
-      if (!session || founder.value && !listedCoupons) notice.value = 'CSM 服务端版本尚未更新，优惠码管理暂不可用。'
     }
     if (currentSection === 'hosts') versions.value = items(extra)
-    if (currentSection === 'templates') appRows.value = items(extra)
+    if (currentSection === 'templates') appRows.value = newestFirst(items(extra))
     if (currentSection === 'disks') mountHosts.value = items(extra)
   } catch (e) { if (sequence === loadSequence) { error.value = e.message; rows.value = []; if (e.status === 401) loggedIn.value = false } }
   finally { if (sequence === loadSequence) loading.value = false }
@@ -554,11 +561,12 @@ onUnmounted(() => { window.removeEventListener('message', onPaymentMessage); if 
           <div v-if="selectedPricingPeriod" class="table-wrap combination-list"><table><thead><tr><th>CPU（核）</th><th>内存（GiB）</th><th>存储（GiB）</th><th>带宽（Mbps）</th><th>新购折扣（%）</th><th>续费折扣（%）</th><th>操作</th></tr></thead><tbody><tr v-for="{ item, index } in currentPeriodRows" :key="index"><td><input v-model.number="item.cpu" type="number" min="1" step="1" aria-label="CPU 核数" /></td><td><input v-model.number="item.memoryGi" type="number" min="1" step="1" aria-label="内存 GiB" /></td><td><input v-model.number="item.storageGi" type="number" min="1" step="1" aria-label="存储 GiB" /></td><td><input v-model.number="item.bandwidthMbps" type="number" min="1" step="1" aria-label="带宽 Mbps" /></td><td><input v-model.number="item.discountNew" type="number" min="1" max="100" step="1" aria-label="新购折扣百分比" /></td><td><input v-model.number="item.discountRenew" type="number" min="1" max="100" step="1" aria-label="续费折扣百分比" /></td><td><button type="button" class="text danger" :aria-label="`删除第 ${index + 1} 条配置`" @click="pricingCombinations.splice(index, 1)">删除</button></td></tr></tbody></table></div>
           <p v-else class="hint">暂无组合折扣。先添加一个周期，再设置该周期的资源配置。</p>
         </div>
-        <button class="primary" @click="savePricing">保存费用配置</button>
-        <div v-if="founder && couponsReady" class="pricing-coupons">
-          <div class="panel-head"><strong>优惠码</strong><button class="primary" @click="openCouponDrawer">＋ 新建优惠码</button></div>
-          <div v-if="coupons.length" class="table-wrap coupon-list"><table><thead><tr><th>优惠码</th><th>适用订单</th><th>支付比例</th><th>有效期</th><th>状态</th></tr></thead><tbody><tr v-for="coupon in coupons" :key="coupon.code"><td class="mono">{{ coupon.code }}</td><td>{{ coupon.kind === 'csm' ? '云主机' : '数据盘' }} · {{ coupon.action === 'buy' ? '购买' : '续费' }}</td><td>{{ coupon.discount }}%</td><td>{{ dateText(coupon.expiresAt) }}</td><td>{{ coupon.status === 'used' ? '已使用' : coupon.status === 'locked' ? '锁定中' : new Date(coupon.expiresAt) <= new Date() ? '已过期' : '可使用' }}</td></tr></tbody></table></div>
-        </div>
+        <div class="pricing-actions"><button class="primary" @click="savePricing">保存费用配置</button><button v-if="founder" class="light" @click="go('coupons')">优惠码管理</button></div>
+      </section>
+      <section v-else-if="section === 'coupons'" class="panel pricing-coupons">
+          <div class="panel-head"><strong>优惠码</strong><div class="pricing-actions"><button class="light" @click="go('pricing')">返回费用设置</button><button class="primary" @click="openCouponDrawer">＋ 新建优惠码</button></div></div>
+          <div v-if="coupons.length" class="table-wrap coupon-list"><table><thead><tr><th>优惠码</th><th>适用订单</th><th>支付比例</th><th>创建时间</th><th>有效期</th><th>状态</th></tr></thead><tbody><tr v-for="coupon in coupons" :key="coupon.code"><td class="mono">{{ coupon.code }}</td><td>{{ coupon.kind === 'csm' ? '云主机' : '数据盘' }} · {{ coupon.action === 'buy' ? '购买' : '续费' }}</td><td>{{ coupon.discount }}%</td><td>{{ dateText(coupon.createdAt) }}</td><td>{{ dateText(coupon.expiresAt) }}</td><td>{{ coupon.status === 'used' ? '已使用' : coupon.status === 'locked' ? '锁定中' : new Date(coupon.expiresAt) <= new Date() ? '已过期' : '可使用' }}</td></tr></tbody></table></div>
+          <p v-else-if="!loading" class="empty">暂无优惠码。</p>
       </section>
       <template v-if="section === 'templates'">
         <div class="tab-actions"><button v-if="templateTab === 'templates'" class="primary" @click="systemTemplatesComponent?.openCreate()">＋ 新建系统模板</button><button v-else class="primary" @click="openAppDrawer">＋ 新建初始化配置</button></div>
@@ -598,14 +606,14 @@ onUnmounted(() => { window.removeEventListener('message', onPaymentMessage); if 
         </div>
         <div v-if="!loading && !rows.length" class="empty">暂无记录。可从购买页面创建第一台主机。</div>
         <div v-else-if="!loading && !filteredHosts.length" class="empty">没有符合筛选条件的主机。</div>
-        <div v-else class="table-wrap host-table"><table><thead><tr><th>主机名称</th><th>用户名</th><th>系统模板</th><th>资源配置</th><th>过期时间</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in filteredHosts" :key="`${row.metadata?.namespace}/${nameOf(row)}`"><td><a class="table-link mono" :href="router.resolve({ name: 'host', params: { name: nameOf(row) }, query: { namespace: row.metadata?.namespace } }).href" @click.prevent="openHost(row)">{{ nameOf(row) }}</a></td><td>{{ hostUsername(row) }}</td><td>{{ row.spec?.templateName || '—' }}</td><td>{{ row.spec?.cpu == null ? '—' : `${row.spec.cpu}核` }} / {{ row.spec?.memory || '—' }} / {{ row.spec?.systemDiskGi == null ? '—' : `${row.spec.systemDiskGi} GiB` }} / {{ row.spec?.bandwidthMbps == null ? '—' : `${row.spec.bandwidthMbps} Mbps` }}</td><td>{{ hostExpiryText(row.spec?.expireTime) }}</td><td class="host-phase"><span class="status">{{ phaseOf(row) }}</span></td><td class="actions"><button v-if="row.status?.initMode !== 'cloudInit'" class="text" @click="run(hostPath(nameOf(row), '/preinstall', row.metadata?.namespace))">预装</button><button class="text" @click="openHost(row)">详情</button></td></tr></tbody></table></div>
+        <div v-else class="table-wrap host-table"><table><thead><tr><th>主机名称</th><th>用户名</th><th>系统模板</th><th>资源配置</th><th>过期时间</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in filteredHosts" :key="`${row.metadata?.namespace}/${nameOf(row)}`"><td><a class="table-link mono" :href="router.resolve({ name: 'host', params: { name: nameOf(row) }, query: { namespace: row.metadata?.namespace } }).href" @click.prevent="openHost(row)">{{ nameOf(row) }}</a></td><td>{{ hostUsername(row) }}</td><td>{{ row.spec?.templateName || '—' }}</td><td>{{ row.spec?.cpu == null ? '—' : `${row.spec.cpu}核` }} / {{ row.spec?.memory || '—' }} / {{ row.spec?.systemDiskGi == null ? '—' : `${row.spec.systemDiskGi} GiB` }} / {{ row.spec?.bandwidthMbps == null ? '—' : `${row.spec.bandwidthMbps} Mbps` }}</td><td>{{ hostExpiryText(row.spec?.expireTime) }}</td><td class="host-phase"><span class="status">{{ phaseOf(row) }}</span></td><td class="actions"><button v-if="row.status?.initMode !== 'cloudInit'" class="text" @click="run(hostPath(nameOf(row), '/preinstall', row.metadata?.namespace))">预装</button><button class="text" @click="openHost(row)">详情</button><button class="text danger" @click="deleteHost(row)">删除</button></td></tr></tbody></table></div>
       </section>
-      <section v-else-if="!hostRouteName && !['purchase', 'pricing', 'templates', 'versions', 'hosts'].includes(section)" class="panel">
+      <section v-else-if="!hostRouteName && !['purchase', 'pricing', 'coupons', 'templates', 'versions', 'hosts'].includes(section)" class="panel">
         <div class="panel-head"><span>{{ loading ? '正在加载…' : `${rows.length} 条记录` }}</span></div>
         <div v-if="!loading && rows.length === 0" class="empty">暂无记录。</div>
         <div v-else class="table-wrap execution-table"><table><thead><tr><th>名称 / 订单号</th><th>状态</th></tr></thead><tbody><tr v-for="row in rows" :key="nameOf(row)"><td class="mono">{{ nameOf(row) }}<details v-if="row.status?.log"><summary>初始化日志</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">{{ row.status.log }}</pre></details></td><td><span class="status">{{ phaseOf(row) }}</span></td></tr></tbody></table></div>
       </section>
-      <HostDetail v-if="section === 'hosts' && hostRouteName && !terminalPage && selected" :host="selected" :runtime="hostRuntime" :runtime-error="hostRuntimeError" :versions="versions" :ssh-host="sshHost" :loading="hostLoading" @refresh="loadHost(hostRouteName)" @preinstall="run(hostPath(hostRouteName, '/preinstall'))" @upgrade="versionName => run(hostPath(hostRouteName, '/upgrade'), { versionName })" @terminal="openTerminal" @add-key="async (publicKey, done) => { if ((await run(hostPath(hostRouteName, '/ssh-keys'), { publicKey })) !== undefined) done() }" @add-jump-key="async (publicKey, done) => { if ((await run(hostPath(hostRouteName, '/jump-keys'), { publicKey })) !== undefined) done() }" />
+      <HostDetail v-if="section === 'hosts' && hostRouteName && !terminalPage && selected" :host="selected" :runtime="hostRuntime" :runtime-error="hostRuntimeError" :versions="versions" :ssh-host="sshHost" :loading="hostLoading" @refresh="loadHost(hostRouteName)" @preinstall="run(hostPath(hostRouteName, '/preinstall'))" @upgrade="versionName => run(hostPath(hostRouteName, '/upgrade'), { versionName })" @terminal="openTerminal" @delete="deleteHost(selected)" @add-key="async (publicKey, done) => { if ((await run(hostPath(hostRouteName, '/ssh-keys'), { publicKey })) !== undefined) done() }" @add-jump-key="async (publicKey, done) => { if ((await run(hostPath(hostRouteName, '/jump-keys'), { publicKey })) !== undefined) done() }" />
       <section v-else-if="section === 'hosts' && hostRouteName && !terminalPage && hostLoading" class="panel"><p class="hint">正在加载主机详情…</p></section>
       <section v-if="selected && section === 'disks'" class="panel detail"><div class="panel-head"><h2>{{ nameOf(selected) }}</h2><button class="text" @click="selected = null">关闭</button></div><dl><dt>容量</dt><dd>{{ selected.spec?.storageGi || 0 }} GiB</dd><dt>到期时间</dt><dd>{{ dateText(selected.spec?.expireTime) }}</dd><dt>PVC</dt><dd>{{ selected.status?.pvcName || '待创建' }}</dd><dt>挂载路径</dt><dd>{{ selected.spec?.attached ? selected.spec?.mountPath || '—' : '未挂载' }}</dd></dl><div class="actions" v-if="selected.spec?.paid"><template v-if="!selected.spec?.attached && selected.status?.phase === 'Available'"><label>目标主机<select v-model="mountTarget"><option value="">选择主机</option><option v-for="host in mountHosts.filter(host => host.spec?.paid)" :key="nameOf(host)" :value="nameOf(host)">{{ nameOf(host) }}</option></select></label><button class="light" :disabled="!mountTarget" @click="run(`/data-disks/${encodeURIComponent(nameOf(selected))}/mount`, { csmName: mountTarget })">挂载</button></template><button v-if="selected.spec?.attached" class="light" @click="unmountDisk(selected)">卸载</button></div></section>
       <TerminalModal v-if="hostRouteName" :visible="terminalOpen || terminalPage" :page="terminalPage" :name="hostRouteName" :namespace="hostRouteNamespace" @close="closeTerminal" />
@@ -672,6 +680,7 @@ input:focus, select:focus, textarea:focus { border-color: rgb(var(--primary-6, 2
 textarea { min-height: 90px; resize: vertical; }
 .form-panel { padding: 0 0 20px; }
 .pricing-combinations { max-width: 1100px; margin-bottom: 20px; }
+.pricing-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .pricing-storage-class { max-width: 420px; margin-bottom: 8px; }
 .pricing-period-create { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
 .pricing-period-create label { width: 120px; }
@@ -781,7 +790,7 @@ input[type='checkbox'] { width: auto; min-height: 0; padding: 0; accent-color: r
 .purchase-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; margin-top: 40px; }
 .purchase-actions .arco-btn { width: 160px; }
 .payment-frame { display: block; width: 100%; height: min(660px, 65vh); border: 0; }
-.pricing-coupons { max-width: 1100px; margin-top: 32px; }
+.pricing-coupons { max-width: 1100px; }
 @media (max-width: 900px) {
   .purchase-periods .arco-btn-group { flex-wrap: wrap; gap: 8px; }
   .purchase-periods .arco-btn-group .arco-btn { border-radius: 2px; }
@@ -833,6 +842,11 @@ input[type='checkbox'] { width: auto; min-height: 0; padding: 0; accent-color: r
   .disk-table td:nth-child(3)::before { content: '容量'; }
   .disk-table td:nth-child(4)::before { content: '到期时间'; }
   .disk-table td:nth-child(5)::before { content: '状态'; }
+  .coupon-list td:nth-child(2)::before { content: '适用订单'; }
+  .coupon-list td:nth-child(3)::before { content: '支付比例'; }
+  .coupon-list td:nth-child(4)::before { content: '创建时间'; }
+  .coupon-list td:nth-child(5)::before { content: '有效期'; }
+  .coupon-list td:nth-child(6)::before { content: '状态'; }
   .combination-list td:nth-child(1)::before { content: 'CPU（核）'; }
   .combination-list td:nth-child(2)::before { content: '内存（GiB）'; }
   .combination-list td:nth-child(3)::before { content: '存储（GiB）'; }
