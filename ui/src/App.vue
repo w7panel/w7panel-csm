@@ -179,7 +179,8 @@ function unmountDisk(row) {
 }
 function orderRequest() {
   const request = { ...form.value }
-  if (request.action === 'buy') delete request.name
+  // Older CSM servers require a name for quotes; current servers replace it when creating an order.
+  if (request.action === 'buy') request.name = `csm-${Math.floor(Math.random() * 100000).toString().padStart(5, '0')}`
   if (purchaseFeaturesReady.value) request.couponCode = request.couponCode?.trim().toUpperCase() || ''
   else delete request.couponCode
   if (request.kind === 'dataDisk') { request.templateName = ''; request.cpu = 0; request.memoryGi = 0; request.bandwidthMbps = 0 }
