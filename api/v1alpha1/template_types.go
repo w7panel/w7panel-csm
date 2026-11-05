@@ -12,12 +12,13 @@ func init() {
 }
 
 type SystemTemplateSpec struct {
-	Version                string   `json:"version"`
-	Source                 string   `json:"source"`
-	Image                  string   `json:"image"`
-	InitMode               string   `json:"initMode,omitempty"`
-	Hash                   string   `json:"hash"`
-	PreinstallApplications []string `json:"preinstallApplications,omitempty"`
+	Version                string           `json:"version"`
+	Source                 string           `json:"source"`
+	Image                  string           `json:"image"`
+	InitMode               string           `json:"initMode,omitempty"`
+	Hash                   string           `json:"hash"`
+	App                    *TemplateAppSpec `json:"app,omitempty"`
+	PreinstallApplications []string         `json:"preinstallApplications,omitempty"`
 }
 
 type SystemTemplate struct {

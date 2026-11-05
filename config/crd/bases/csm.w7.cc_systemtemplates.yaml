@@ -48,6 +48,14 @@
                   "image": {
                     "type": "string"
                   },
+                  "app": {
+                    "type": "object",
+                    "properties": {
+                      "env": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "value": {"type": "string"}}, "required": ["name", "value"]}},
+                      "containers": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "image": {"type": "string"}, "command": {"type": "array", "items": {"type": "string"}}, "args": {"type": "array", "items": {"type": "string"}}, "env": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "value": {"type": "string"}}, "required": ["name", "value"]}}}, "required": ["name", "image"]}},
+                      "initContainers": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "image": {"type": "string"}, "command": {"type": "array", "items": {"type": "string"}}, "args": {"type": "array", "items": {"type": "string"}}, "env": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "value": {"type": "string"}}, "required": ["name", "value"]}}}, "required": ["name", "image"]}}
+                    }
+                  },
                   "initMode": {
                     "type": "string",
                     "enum": ["cloudInit"]

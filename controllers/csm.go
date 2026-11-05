@@ -174,6 +174,9 @@ func (r *CsmReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	if err != nil {
 		return r.hostStatus(ctx, host, "Failed", err.Error(), port)
 	}
+	if err := hostruntime.ApplyTemplateApp(dep, template.Spec.App); err != nil {
+		return r.hostStatus(ctx, host, "Failed", err.Error(), port)
+	}
 	if r.JumpPort != 0 {
 		hostruntime.ConfigureSSHGateway(dep, host)
 	}

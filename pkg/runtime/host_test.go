@@ -37,3 +37,23 @@ func TestDeploymentRejectsUnsafeMount(t *testing.T) {
 		t.Fatal("accepted unsafe mount")
 	}
 }
+
+func TestApplyTemplateAppKeepsHostFields(t *testing.T) {
+	h := &api.Csm{Status: api.CsmStatus{SystemPVCName: "system"}}
+	h.Name = "test"
+	dep, err := Deployment(h, "csm:old", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &api.TemplateAppSpec{Env: []api.TemplateEnvVar{{Name: "MODE", Value: "safe"}}, Containers: []api.TemplateContainer{{Name: "helper", Image: "helper:1"}}, InitContainers: []api.TemplateContainer{{Name: "prepare", Image: "busybox", Command: []string{"true"}}}}
+	if err := ApplyTemplateApp(dep, app); err != nil {
+		t.Fatal(err)
+	}
+	pod := dep.Spec.Template.Spec
+	if len(pod.Containers) != 2 || len(pod.InitContainers) != 1 || pod.Containers[0].Env[0].Name != "CSM_SSH_PUBLIC_KEYS" || pod.Containers[0].Env[1].Name != "MODE" || len(pod.Volumes) != 1 || pod.Containers[0].Command[0] != "/bin/sh" || *pod.RuntimeClassName != "sysbox-runc" {
+		t.Fatalf("CSM fields lost: %+v", pod)
+	}
+	if err := ApplyTemplateApp(dep, &api.TemplateAppSpec{Env: []api.TemplateEnvVar{{Name: "CSM_SSH_PUBLIC_KEYS", Value: "bad"}}}); err == nil {
+		t.Fatal("reserved variable accepted")
+	}
+}

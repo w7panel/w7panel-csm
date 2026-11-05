@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	api "github.com/w7panel/w7panel-csm/api/v1alpha1"
 	"github.com/w7panel/w7panel-csm/pkg/preinstall"
 
 	"golang.org/x/crypto/ssh"
@@ -374,11 +375,12 @@ func (b KubeBackend) saveSystemTemplate(ctx context.Context, name, action string
 			ResourceVersion string `json:"resourceVersion"`
 		} `json:"metadata"`
 		Spec struct {
-			Version                string   `json:"version"`
-			Source                 string   `json:"source"`
-			Image                  string   `json:"image"`
-			InitMode               string   `json:"initMode"`
-			PreinstallApplications []string `json:"preinstallApplications"`
+			Version                string          `json:"version"`
+			Source                 string          `json:"source"`
+			Image                  string          `json:"image"`
+			InitMode               string          `json:"initMode"`
+			PreinstallApplications []string        `json:"preinstallApplications"`
+			App                    json.RawMessage `json:"app"`
 		} `json:"spec"`
 	}
 	if json.Unmarshal(body, &input) != nil || !validName(input.Metadata.Name) ||
@@ -391,6 +393,22 @@ func (b KubeBackend) saveSystemTemplate(ctx context.Context, name, action string
 		return nil, ErrConflict
 	}
 	if input.Spec.InitMode != "" && input.Spec.InitMode != "cloudInit" {
+		return nil, ErrConflict
+	}
+	var app *api.TemplateAppSpec
+	if len(input.Spec.App) > 0 && string(input.Spec.App) != "null" {
+		decoder := json.NewDecoder(bytes.NewReader(input.Spec.App))
+		decoder.DisallowUnknownFields()
+		value := &api.TemplateAppSpec{}
+		if err := decoder.Decode(value); err != nil {
+			return nil, ErrConflict
+		}
+		if err := decoder.Decode(new(any)); err != io.EOF {
+			return nil, ErrConflict
+		}
+		app = value
+	}
+	if err := app.Validate(); err != nil {
 		return nil, ErrConflict
 	}
 	seen := map[string]bool{}
@@ -417,6 +435,9 @@ func (b KubeBackend) saveSystemTemplate(ctx context.Context, name, action string
 		}
 	}
 	spec := map[string]any{"version": input.Spec.Version, "source": input.Spec.Source, "image": input.Spec.Image}
+	if !app.Empty() {
+		spec["app"] = app
+	}
 	if input.Spec.InitMode != "" {
 		spec["initMode"] = input.Spec.InitMode
 	}

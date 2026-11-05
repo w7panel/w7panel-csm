@@ -86,6 +86,33 @@ exec /sbin/init`}
 	return &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: host.Name, Namespace: host.Namespace}, Spec: appsv1.DeploymentSpec{Replicas: &replicas, Selector: &metav1.LabelSelector{MatchLabels: labels}, Strategy: appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType}, Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels, Annotations: annotations}, Spec: corev1.PodSpec{RuntimeClassName: ptr("sysbox-runc"), Containers: []corev1.Container{container}, Volumes: volumes}}}}, nil
 }
 
+func ApplyTemplateApp(dep *appsv1.Deployment, app *api.TemplateAppSpec) error {
+	if err := app.Validate(); err != nil {
+		return err
+	}
+	if app.Empty() {
+		return nil
+	}
+	main := &dep.Spec.Template.Spec.Containers[0]
+	for _, item := range app.Env {
+		main.Env = append(main.Env, corev1.EnvVar{Name: item.Name, Value: item.Value})
+	}
+	container := func(item api.TemplateContainer) corev1.Container {
+		result := corev1.Container{Name: item.Name, Image: item.Image, Command: item.Command, Args: item.Args}
+		for _, variable := range item.Env {
+			result.Env = append(result.Env, corev1.EnvVar{Name: variable.Name, Value: variable.Value})
+		}
+		return result
+	}
+	for _, item := range app.Containers {
+		dep.Spec.Template.Spec.Containers = append(dep.Spec.Template.Spec.Containers, container(item))
+	}
+	for _, item := range app.InitContainers {
+		dep.Spec.Template.Spec.InitContainers = append(dep.Spec.Template.Spec.InitContainers, container(item))
+	}
+	return nil
+}
+
 func Service(host *api.Csm) *corev1.Service {
 	return &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: host.Name, Namespace: host.Namespace}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP, Selector: map[string]string{"csm.w7.cc/host": host.Name}, Ports: []corev1.ServicePort{{Name: "ssh", Port: 22, TargetPort: intstr.FromInt32(2222)}}}}
 }

@@ -1,6 +1,8 @@
 <script setup>
 import { ref } from 'vue'
 import { api, items } from './api'
+import TemplateAppFields from './TemplateAppFields.vue'
+import { deploymentToTemplateApp, emptyApp, normalizeApp, templateToDeployment, validateApp } from './templateApp'
 
 defineProps({ rows: { type: Array, required: true }, loading: Boolean })
 const emit = defineEmits(['saved', 'navigate'])
@@ -8,6 +10,7 @@ const editor = ref(null)
 const applications = ref([])
 const saving = ref(false)
 const error = ref('')
+const hostAppEditor = Boolean(window.__POWERED_BY_WUJIE__) && typeof window.$wujie?.props?.handles?.systemTemplateAppForm === 'function'
 defineExpose({ openCreate: () => open() })
 
 async function open(row) {
@@ -20,10 +23,25 @@ async function open(row) {
       version: row.spec.version,
       source: row.spec.source,
       image: row.spec.image,
+      app: normalizeApp(row.spec.app ? JSON.parse(JSON.stringify(row.spec.app)) : null),
       initMode: row.spec.initMode || '',
       preinstallApplications: [...(row.spec.preinstallApplications || [])],
-    } : { name: '', resourceVersion: '', version: '', source: 'manual', image: '', initMode: 'cloudInit', preinstallApplications: [] }
+    } : { name: '', resourceVersion: '', version: '', source: 'manual', image: '', app: emptyApp(), initMode: 'cloudInit', preinstallApplications: [] }
   } catch (e) { error.value = e.message }
+}
+
+function openAppEditor() {
+  error.value = ''
+  if (!hostAppEditor) return
+  const open = window.$wujie.props.handles.systemTemplateAppForm
+  open({ json: templateToDeployment(editor.value) }, deployment => {
+    try {
+      const updated = deploymentToTemplateApp(editor.value, deployment)
+      editor.value.image = updated.image
+      editor.value.app = normalizeApp(updated.app)
+      error.value = ''
+    } catch (e) { error.value = e.message; throw e }
+  })
 }
 
 async function save() {
@@ -32,6 +50,8 @@ async function save() {
   error.value = ''
   const { name, resourceVersion, ...spec } = editor.value
   try {
+    validateApp(spec.app)
+    if (!spec.app.env.length && !spec.app.containers.length && !spec.app.initContainers.length) delete spec.app
     await api(resourceVersion ? `/system-templates/${encodeURIComponent(name)}` : '/system-templates', {
       method: resourceVersion ? 'PUT' : 'POST',
       body: JSON.stringify({ metadata: { name, resourceVersion }, spec }),
@@ -64,6 +84,8 @@ async function save() {
         <label>来源<select v-model="editor.source" :disabled="!!editor.resourceVersion"><option v-if="editor.resourceVersion" value="official">官方</option><option value="manual">手动</option></select></label>
         <label>系统镜像<input v-model.trim="editor.image" required placeholder="registry.example.com/csm-system:latest" /></label>
       </div>
+      <fieldset v-if="hostAppEditor" class="app-editor-entry"><legend>应用配置</legend><p class="hint">支持系统镜像、环境变量及附加/初始化容器。数据卷、调度和 CSM 主容器启动命令不可修改。</p><button type="button" class="light" :disabled="!editor.image" @click="openAppEditor">编辑应用配置</button><p class="app-summary">{{ editor.app.containers.length }} 个附加容器 · {{ editor.app.initContainers.length }} 个初始化容器</p></fieldset>
+      <TemplateAppFields v-else :app="editor.app" />
       <fieldset><legend>初始化配置</legend><p v-if="!applications.some(app => editor.initMode === 'cloudInit' ? (app.spec.cloudConfig || app.spec.hasCloudConfig) : (app.spec.shell || app.spec.hasShell))" class="hint">暂无可选配置，可从“初始化配置”页新增。</p><label v-for="app in applications.filter(app => editor.initMode === 'cloudInit' ? (app.spec.cloudConfig || app.spec.hasCloudConfig) : (app.spec.shell || app.spec.hasShell))" :key="app.metadata.name" class="template-check"><input v-model="editor.preinstallApplications" type="checkbox" :value="app.metadata.name" />{{ app.metadata.name }}</label></fieldset>
       <div class="template-actions"><button type="button" class="light" @click="emit('navigate', 'apps')">管理初始化配置</button><button type="button" class="light" @click="editor = null">取消</button><button class="primary" :disabled="saving">{{ saving ? '保存中…' : '保存修改' }}</button></div>
     </form>
@@ -75,6 +97,8 @@ async function save() {
 .template-row{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:18px 0;border-top:1px solid var(--color-border-2,#e5e6eb)}
 .template-row:first-of-type{border-top:0}.template-row strong{margin-right:12px}.template-row p{margin:7px 0;color:var(--color-text-2,#4e5969);overflow-wrap:anywhere}.template-row small{color:var(--color-text-3,#86909c)}
 .template-row button{flex:none}.template-editor fieldset{border:1px solid var(--color-border-2,#e5e6eb);border-radius:2px;padding:14px;margin:0 0 20px}.template-editor legend{color:var(--color-text-2,#4e5969);font-size:13px}
+.app-editor-entry{border:1px solid var(--color-border-2,#e5e6eb);border-radius:2px;padding:14px;margin:0 0 20px}.app-editor-entry legend{color:var(--color-text-2,#4e5969);font-size:13px}
+.app-summary{margin:10px 0 0;color:var(--color-text-3,#86909c)}
 .template-check{display:inline-flex;flex-direction:row;align-items:center;margin:8px 18px 8px 0}.template-check input{min-width:auto}
 .template-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
 @media(max-width:700px){.template-row{align-items:flex-start;flex-direction:column;gap:10px}.template-row button{align-self:flex-end;white-space:nowrap}.template-actions>*{flex:1}}

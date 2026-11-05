@@ -182,6 +182,22 @@ func TestSystemTemplateSave(t *testing.T) {
 	if putCount != 1 || updatedSpec["hash"] == "legacy" || updatedSpec["hash"] == "" {
 		t.Fatalf("updated spec: %v, put=%d", updatedSpec, putCount)
 	}
+	withApp := json.RawMessage(`{"metadata":{"name":"ubuntu-24.04","resourceVersion":"4"},"spec":{"version":"24.04","source":"official","image":"ubuntu:new","app":{"env":[{"name":"MODE","value":"safe"}],"containers":[{"name":"helper","image":"helper:1"}]}}}`)
+	if _, err := b.Action(context.Background(), "system-templates", "", "ubuntu-24.04", "update", withApp); err != nil {
+		t.Fatal(err)
+	}
+	appSpec := updated["spec"].(map[string]any)["app"].(map[string]any)
+	if len(appSpec["containers"].([]any)) != 1 {
+		t.Fatalf("app configuration lost: %v", appSpec)
+	}
+	badApp := json.RawMessage(`{"metadata":{"name":"ubuntu-24.04","resourceVersion":"4"},"spec":{"version":"24.04","source":"official","image":"ubuntu:new","app":{"env":[{"name":"CSM_SSH_PUBLIC_KEYS","value":"bad"}]}}}`)
+	if _, err := b.Action(context.Background(), "system-templates", "", "ubuntu-24.04", "update", badApp); !errors.Is(err, ErrConflict) {
+		t.Fatalf("reserved variable accepted: %v", err)
+	}
+	unknownApp := json.RawMessage(`{"metadata":{"name":"ubuntu-24.04","resourceVersion":"4"},"spec":{"version":"24.04","source":"official","image":"ubuntu:new","app":{"containers":[{"name":"helper","image":"helper:1","volumeMounts":[{"name":"system","mountPath":"/"}]}]}}}`)
+	if _, err := b.Action(context.Background(), "system-templates", "", "ubuntu-24.04", "update", unknownApp); !errors.Is(err, ErrConflict) {
+		t.Fatalf("unsupported mount accepted: %v", err)
+	}
 	stale := json.RawMessage(`{"metadata":{"name":"ubuntu-24.04","resourceVersion":"3"},"spec":{"version":"24.04","source":"official","image":"ubuntu:new"}}`)
 	if _, err := b.Action(context.Background(), "system-templates", "", "ubuntu-24.04", "update", stale); !errors.Is(err, ErrConflict) {
 		t.Fatalf("stale update: %v", err)
