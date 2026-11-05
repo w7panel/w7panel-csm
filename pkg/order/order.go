@@ -91,6 +91,9 @@ func (s Service) Create(ctx context.Context, req Request) (Record, error) {
 	if err := Validate(req); err != nil {
 		return Record{}, err
 	}
+	if req.Name == "" {
+		return Record{}, ErrInvalid
+	}
 	payment, err := s.Gateway.Create(ctx, req)
 	if err != nil {
 		return Record{}, err
@@ -146,7 +149,7 @@ func Validate(r Request) error {
 	if r.CouponCode != "" && !validCouponCode(r.CouponCode) {
 		return ErrInvalid
 	}
-	if r.Namespace == "" || r.Name == "" || !dnsName(r.Name) || !dnsName(r.Namespace) {
+	if r.Namespace == "" || !dnsName(r.Namespace) || (r.Name == "" && r.Action != "buy") || (r.Name != "" && !dnsName(r.Name)) {
 		return ErrInvalid
 	}
 	if r.Kind != "csm" && r.Kind != "dataDisk" {

@@ -39,8 +39,7 @@ const filteredHosts = computed(() => filterHosts(rows.value, hostUsernameSearch.
 const selected = ref(null)
 const templates = ref([])
 const appRows = ref([])
-function newCsmName() { return `csm-${Math.floor(Math.random() * 100000).toString().padStart(5, '0')}` }
-function newCsmOrder() { return { kind: 'csm', action: 'buy', name: newCsmName(), templateName: '', cpu: 2, memoryGi: 4, storageGi: 40, bandwidthMbps: 5, quantity: 1, unit: 'month', couponCode: '' } }
+function newCsmOrder() { return { kind: 'csm', action: 'buy', name: '', templateName: '', cpu: 2, memoryGi: 4, storageGi: 40, bandwidthMbps: 5, quantity: 1, unit: 'month', couponCode: '' } }
 const form = ref(newCsmOrder())
 const purchasePrices = ref(null)
 const purchaseResources = [
@@ -180,6 +179,7 @@ function unmountDisk(row) {
 }
 function orderRequest() {
   const request = { ...form.value }
+  if (request.action === 'buy') delete request.name
   if (purchaseFeaturesReady.value) request.couponCode = request.couponCode?.trim().toUpperCase() || ''
   else delete request.couponCode
   if (request.kind === 'dataDisk') { request.templateName = ''; request.cpu = 0; request.memoryGi = 0; request.bandwidthMbps = 0 }
@@ -198,7 +198,7 @@ function scheduleQuote() {
   quoteAmountCents.value = null
   quoteError.value = ''
   quoteLoading.value = false
-  if (!loggedIn.value || section.value !== 'purchase' || !form.value.name || (form.value.kind === 'csm' && form.value.action === 'buy' && !form.value.templateName)) return
+  if (!loggedIn.value || section.value !== 'purchase' || (form.value.action !== 'buy' && !form.value.name) || (form.value.kind === 'csm' && form.value.action === 'buy' && !form.value.templateName)) return
   quoteLoading.value = true
   quoteTimer = setTimeout(async () => {
     try {
@@ -427,11 +427,7 @@ watch(section, load)
 watch(() => route.fullPath, syncRoute)
 watch(form, scheduleQuote, { deep: true })
 watch(targetNamespace, scheduleQuote)
-watch(() => [form.value.kind, form.value.action], ([kind, action], [oldKind, oldAction]) => {
-  if (kind === 'csm' && action === 'buy' && !/^csm-\d{5}$/.test(form.value.name)) form.value.name = newCsmName()
-  else if (kind === 'csm' && oldKind === 'csm' && oldAction === 'buy' && action !== 'buy') form.value.name = ''
-  else if (kind === 'dataDisk' && oldKind === 'csm' && action === 'buy') form.value.name = ''
-})
+watch(() => form.value.action, action => { if (action === 'buy') form.value.name = '' })
 watch(() => form.value.kind, kind => {
   if (kind === 'csm') {
     if (!form.value.cpu) form.value.cpu = 2
@@ -481,8 +477,7 @@ onUnmounted(() => { window.removeEventListener('message', onPaymentMessage); if 
           <label v-if="founder">目标账户<select v-model="targetNamespace"><option value="">请选择目标账户</option><option v-for="account in accounts" :key="account" :value="account">{{ account }}</option></select></label>
           <label>资源类型<select v-model="form.kind"><option value="csm">云主机</option><option value="dataDisk">独立数据盘</option></select></label>
           <label>购买方式<select v-model="form.action"><option value="buy">购买</option><option value="renew">续费</option><option value="expand">扩容</option></select></label>
-          <label v-if="form.kind === 'csm' && form.action === 'buy'">名称<span class="purchase-generated-name">{{ form.name }}</span></label>
-          <label v-else>名称<input v-model.trim="form.name" placeholder="资源名称" /></label>
+          <label v-if="form.action !== 'buy'">名称<input v-model.trim="form.name" placeholder="资源名称" /></label>
           <label v-if="form.kind === 'csm' && form.action === 'buy'">系统模板<select v-model="form.templateName" required><option value="">请选择系统模板</option><option v-for="item in templates" :key="nameOf(item)" :value="nameOf(item)">{{ nameOf(item) }}</option></select></label>
         </div>
         <p v-if="form.kind === 'csm' && form.action === 'buy' && !loading && !templates.length" class="alert" role="alert">暂无可用系统模板，请先创建系统模板。</p>
@@ -726,7 +721,6 @@ input[type='checkbox'] { width: auto; min-height: 0; padding: 0; accent-color: r
 .detail .actions label { min-width: 220px; }
 .purchase-page { max-width: 920px; margin-inline: auto; padding: 0; }
 .purchase-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; }
-.purchase-generated-name { display: flex; align-items: center; min-height: 32px; color: var(--color-text-1, #1d2129); }
 .purchase-quick { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
 .purchase-quick > span { flex: none; }
 .purchase-quick .arco-select { width: min(360px, 100%); }

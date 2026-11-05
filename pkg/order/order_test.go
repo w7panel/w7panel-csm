@@ -15,6 +15,20 @@ import (
 
 type fakeGateway struct{ status PaymentStatus }
 
+func TestBuyQuoteAllowsMissingNameButCreateRequiresOne(t *testing.T) {
+	req := Request{Kind: "dataDisk", Action: "buy", Namespace: "tenant-a", StorageGi: 10, Quantity: 1, Unit: "month"}
+	if err := Validate(req); err != nil {
+		t.Fatalf("unnamed purchase quote: %v", err)
+	}
+	if _, err := (Service{Gateway: fakeGateway{}, Store: &fakeStore{}}).Create(t.Context(), req); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("unnamed purchase created: %v", err)
+	}
+	req.Action = "renew"
+	if err := Validate(req); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("unnamed renewal accepted: %v", err)
+	}
+}
+
 func (g fakeGateway) Create(context.Context, Request) (Payment, error) {
 	return Payment{OrderSn: "SN-1", AmountCents: 1200, Expected: CloudTerms{Hour: 72000, CPU: 2, Memory: 4, Storage: 40, Bandwidth: 5}}, nil
 }

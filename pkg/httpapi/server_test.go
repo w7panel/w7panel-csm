@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -172,6 +173,7 @@ func TestUpdateInitializationConfigRequiresFounder(t *testing.T) {
 type backendStub struct {
 	namespace string
 	actions   int
+	missing   bool
 }
 
 func (b *backendStub) List(_ context.Context, kind, ns string) (json.RawMessage, error) {
@@ -180,6 +182,12 @@ func (b *backendStub) List(_ context.Context, kind, ns string) (json.RawMessage,
 }
 func (b *backendStub) Get(_ context.Context, kind, ns, name string) (json.RawMessage, error) {
 	b.namespace = ns
+	if b.missing {
+		if kind == "system-templates" {
+			return json.RawMessage(`{"spec":{"initMode":"cloudInit"}}`), nil
+		}
+		return nil, ErrNotFound
+	}
 	return json.RawMessage(`{"metadata":{"name":"host"}}`), nil
 }
 func (b *backendStub) Action(_ context.Context, kind, ns, name, action string, _ json.RawMessage) (json.RawMessage, error) {
@@ -189,6 +197,31 @@ func (b *backendStub) Action(_ context.Context, kind, ns, name, action string, _
 }
 
 type gatewayStub struct{}
+
+type purchaseGateway struct{ gatewayStub }
+
+func (purchaseGateway) Create(context.Context, order.Request) (order.Payment, error) {
+	return order.Payment{OrderSn: "SN", NeedPay: true, AmountCents: 100}, nil
+}
+
+func TestPurchaseNameGeneratedByServer(t *testing.T) {
+	server := NewServer(func(context.Context, string) (Identity, error) {
+		return Identity{Namespace: "tenant-a"}, nil
+	}, &backendStub{missing: true}, order.Service{Gateway: purchaseGateway{}, Store: storeStub{}}, "")
+	for _, tc := range []struct{ kind, body string }{
+		{"csm", `{"kind":"csm","action":"buy","name":"client-name","templateName":"ubuntu","cpu":2,"memoryGi":4,"storageGi":40,"bandwidthMbps":5,"quantity":1,"unit":"month"}`},
+		{"dataDisk", `{"kind":"dataDisk","action":"buy","storageGi":10,"quantity":1,"unit":"month"}`},
+	} {
+		req := httptest.NewRequest(http.MethodPost, Prefix+"/orders", strings.NewReader(tc.body))
+		req.Header.Set("Authorization", "Bearer tenant")
+		w := httptest.NewRecorder()
+		server.Handler().ServeHTTP(w, req)
+		var result order.Record
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &result) != nil || !regexp.MustCompile(`^ckm-\d{5}$`).MatchString(result.Name) || result.Kind != tc.kind {
+			t.Fatalf("%s purchase: %d %s", tc.kind, w.Code, w.Body.String())
+		}
+	}
+}
 
 func (gatewayStub) Create(context.Context, order.Request) (order.Payment, error) {
 	return order.Payment{OrderSn: "SN"}, nil

@@ -2,10 +2,12 @@ package httpapi
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -529,6 +531,9 @@ func (s *Server) createOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Namespace = ns // Never accept a tenant from the request body.
+	if req.Action == "buy" {
+		req.Name = ""
+	}
 	if req.FounderFree && !identity(r.Context()).Founder {
 		respondError(w, 403, "founder required")
 		return
@@ -558,11 +563,24 @@ func (s *Server) createOrder(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if _, err := s.Backend.Get(r.Context(), kind, ns, req.Name); err == nil {
-			respondError(w, 409, "resource already exists")
-			return
-		} else if !errors.Is(err, ErrNotFound) {
-			writeResult(w, nil, err)
+		// shortcut: pending orders do not reserve names; add reservation if concurrent collisions become material.
+		for attempts := 0; attempts < 10; attempts++ {
+			n, err := rand.Int(rand.Reader, big.NewInt(100000))
+			if err != nil {
+				writeResult(w, nil, err)
+				return
+			}
+			req.Name = fmt.Sprintf("ckm-%05d", n.Int64())
+			if _, err := s.Backend.Get(r.Context(), kind, ns, req.Name); errors.Is(err, ErrNotFound) {
+				break
+			} else if err != nil {
+				writeResult(w, nil, err)
+				return
+			}
+			req.Name = ""
+		}
+		if req.Name == "" {
+			respondError(w, 409, "resource name unavailable")
 			return
 		}
 	} else {
