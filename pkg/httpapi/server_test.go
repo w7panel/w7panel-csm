@@ -223,6 +223,48 @@ func TestPurchaseNameGeneratedByServer(t *testing.T) {
 	}
 }
 
+func TestHostRuntimeUsesTenantNamespaceAndShowsDeploymentPods(t *testing.T) {
+	kube := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer kube-token" {
+			t.Errorf("Kubernetes token missing")
+		}
+		switch r.URL.Path {
+		case "/apis/apps/v1/namespaces/tenant-a/deployments/host":
+			w.Write([]byte(`{"metadata":{"name":"host"},"spec":{"replicas":1},"status":{"readyReplicas":1,"updatedReplicas":1,"availableReplicas":1}}`))
+		case "/api/v1/namespaces/tenant-a/pods":
+			if r.URL.Query().Get("labelSelector") != "csm.w7.cc/host=host" {
+				t.Errorf("unexpected pod selector: %s", r.URL.RawQuery)
+			}
+			w.Write([]byte(`{"items":[{"metadata":{"name":"host-pod"},"spec":{"nodeName":"node-a","containers":[{"name":"host"}]},"status":{"phase":"Running","podIP":"10.0.0.1","containerStatuses":[{"name":"host","ready":true,"restartCount":2}]}}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer kube.Close()
+	backend := &backendStub{}
+	server := NewServer(func(context.Context, string) (Identity, error) {
+		return Identity{Namespace: "tenant-a"}, nil
+	}, backend, order.Service{Gateway: gatewayStub{}, Store: storeStub{}}, "")
+	server.KubeURL, server.KubeToken, server.KubeClient = kube.URL, "kube-token", kube.Client()
+	req := httptest.NewRequest(http.MethodGet, Prefix+"/csms/host/runtime?namespace=other", nil)
+	req.Header.Set("Authorization", "Bearer tenant")
+	w := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+	var result struct {
+		Deployment hostDeploymentInfo `json:"deployment"`
+		Pods       []hostPodInfo      `json:"pods"`
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &result) != nil || backend.namespace != "tenant-a" || result.Deployment.Name != "host" || result.Deployment.Ready != 1 || len(result.Pods) != 1 || result.Pods[0].Name != "host-pod" || result.Pods[0].Ready != 1 || result.Pods[0].Restarts != 2 {
+		t.Fatalf("runtime: %d %s", w.Code, w.Body.String())
+	}
+	backend.missing = true
+	w = httptest.NewRecorder()
+	server.Handler().ServeHTTP(w, req)
+	if w.Code != 404 {
+		t.Fatalf("missing host runtime exposed: %d %s", w.Code, w.Body.String())
+	}
+}
+
 func (gatewayStub) Create(context.Context, order.Request) (order.Payment, error) {
 	return order.Payment{OrderSn: "SN"}, nil
 }

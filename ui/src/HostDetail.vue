@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 
-const props = defineProps({ host: { type: Object, required: true }, versions: { type: Array, required: true }, sshHost: { type: String, default: '' }, loading: Boolean })
+const props = defineProps({ host: { type: Object, required: true }, runtime: { type: Object, default: null }, runtimeError: { type: String, default: '' }, versions: { type: Array, required: true }, sshHost: { type: String, default: '' }, loading: Boolean })
 const emit = defineEmits(['refresh', 'preinstall', 'upgrade', 'terminal', 'add-key', 'add-jump-key'])
 const upgradeTarget = ref('')
 const publicKey = ref('')
@@ -55,6 +55,24 @@ function addJumpKey() {
       <dl class="host-facts"><div><dt>系统模板</dt><dd>{{ display(host.spec?.templateName) }}</dd></div><div><dt>系统盘 PVC</dt><dd>{{ display(host.status?.systemPVCName) }}</dd></div><div><dt>存储类</dt><dd>{{ display(host.spec?.storageClassName) }}</dd></div><div><dt>到期时间</dt><dd>{{ dateText(host.spec?.expireTime) }}</dd></div></dl>
     </section>
 
+    <section class="host-section" aria-labelledby="host-runtime-heading">
+      <h2 id="host-runtime-heading">运行状态</h2>
+      <p v-if="runtimeError" class="host-section-note" role="alert">运行信息读取失败：{{ runtimeError }}</p>
+      <p v-else-if="!runtime" class="host-section-note">正在读取运行信息…</p>
+      <template v-else>
+        <dl v-if="runtime.deployment" class="host-facts"><div><dt>Deployment</dt><dd class="mono">{{ runtime.deployment.name }}</dd></div><div><dt>就绪副本</dt><dd>{{ runtime.deployment.ready }} / {{ runtime.deployment.desired }}</dd></div><div><dt>已更新</dt><dd>{{ runtime.deployment.updated }}</dd></div><div><dt>可用副本</dt><dd>{{ runtime.deployment.available }}</dd></div></dl>
+        <p v-else class="host-section-note">Deployment 尚未创建。</p>
+        <h3 class="host-pods-heading">Pod</h3>
+        <div v-if="runtime.pods?.length" class="host-pods">
+          <article v-for="pod in runtime.pods" :key="pod.name" class="host-pod">
+            <div class="host-pod-heading"><strong class="mono">{{ pod.name }}</strong><span class="status">{{ display(pod.phase) }}</span></div>
+            <dl class="host-pod-facts"><div><dt>Ready</dt><dd>{{ pod.ready }} / {{ pod.total }}</dd></div><div><dt>IP</dt><dd class="mono">{{ display(pod.ip) }}</dd></div><div><dt>节点</dt><dd class="mono">{{ display(pod.node) }}</dd></div><div><dt>重启</dt><dd>{{ pod.restarts }}</dd></div></dl>
+          </article>
+        </div>
+        <p v-else class="host-section-note">暂无关联 Pod。</p>
+      </template>
+    </section>
+
     <div class="host-columns">
       <section class="host-section" aria-labelledby="host-connect-heading">
         <h2 id="host-connect-heading">连接与公钥</h2>
@@ -98,6 +116,7 @@ cat ~/.ssh/csm-218.pub</pre>
 .host-name{margin-right:10px;font-size:20px;overflow-wrap:anywhere}.host-heading p{margin:4px 0 0;color:var(--color-text-2,#4e5969);overflow-wrap:anywhere}.host-heading-actions{display:flex;gap:8px;flex-wrap:wrap}
 .host-section{min-width:0;margin-bottom:16px;padding:20px;background:var(--color-bg-2,#fff)}.host-section h2{margin-bottom:12px}.host-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.host-metrics>div{min-width:0;padding:4px 0}.host-metrics span{display:block;color:var(--color-text-2,#4e5969)}.host-metrics strong{display:block;margin-top:6px;font-size:18px;overflow-wrap:anywhere}.host-metrics small{font-size:13px;font-weight:400}.host-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 24px;margin:16px 0 0}.host-facts>div{display:grid;grid-template-columns:110px minmax(0,1fr);gap:12px;padding:12px 0;border-bottom:1px solid var(--color-border-2,#e5e6eb)}.host-facts dt{color:var(--color-text-2,#4e5969)}.host-facts dd{min-width:0;margin:0;overflow-wrap:anywhere}
 .host-columns{display:block}.host-connection-guide{margin-top:16px}.host-connection-guide summary{cursor:pointer;color:rgb(var(--primary-6,22,93,255))}.host-command{max-width:900px;margin:16px 0;padding:12px;background:var(--color-fill-2,#f2f3f5);white-space:pre-wrap;overflow-wrap:anywhere}.host-key-form{max-width:720px;margin-top:20px}.host-key-form button{margin-top:12px}.host-section-note{color:var(--color-text-2,#4e5969)}.host-upgrade{display:flex;align-items:end;gap:12px;max-width:560px;margin-top:24px}.host-upgrade label{flex:1;min-width:0}.host-upgrade button{flex:none}
+.host-pods-heading{margin:20px 0 12px;font-size:16px}.host-pods{display:grid;gap:12px}.host-pod{min-width:0;padding:12px;border:1px solid var(--color-border-2,#e5e6eb)}.host-pod-heading{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.host-pod-heading strong{min-width:0;overflow-wrap:anywhere}.host-pod-facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:12px 0 0}.host-pod-facts>div{min-width:0}.host-pod-facts dt{color:var(--color-text-2,#4e5969)}.host-pod-facts dd{margin:4px 0 0;overflow-wrap:anywhere}
 @media(max-width:800px){.host-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:600px){.host-heading{align-items:stretch;flex-direction:column}.host-heading-actions>*{flex:1}.host-detail-page button,.host-detail-page select{min-height:44px}.host-section{padding:16px}.host-facts{grid-template-columns:1fr}.host-facts>div{grid-template-columns:100px minmax(0,1fr)}.host-upgrade{align-items:stretch;flex-direction:column}.host-upgrade button{align-self:flex-start}}
+@media(max-width:600px){.host-heading{align-items:stretch;flex-direction:column}.host-heading-actions>*{flex:1}.host-detail-page button,.host-detail-page select{min-height:44px}.host-section{padding:16px}.host-facts{grid-template-columns:1fr}.host-facts>div{grid-template-columns:100px minmax(0,1fr)}.host-pod-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.host-upgrade{align-items:stretch;flex-direction:column}.host-upgrade button{align-self:flex-start}}
 </style>
