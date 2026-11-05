@@ -59,7 +59,7 @@ function applyQuickPurchase(index) {
   const item = quickPurchaseOptions.value[index]
   if (item) Object.assign(form.value, { quantity: item.quantity, unit: item.unit, cpu: item.cpu, memoryGi: item.memoryGi, storageGi: item.storageGi, bandwidthMbps: item.bandwidthMbps })
 }
-const morePurchasePeriod = computed(() => purchasePeriods.slice(8).find(item => item.quantity === form.value.quantity && item.unit === form.value.unit))
+const morePurchasePeriod = computed(() => purchasePeriods.slice(8).find(item => item.quantity === form.value.quantity && item.unit === form.value.unit) || (!purchasePeriods.some(item => item.quantity === form.value.quantity && item.unit === form.value.unit) ? { quantity: form.value.quantity, unit: form.value.unit } : null))
 function selectPurchasePeriod(key) {
   const [unit, quantity] = key.split(':')
   form.value.quantity = Number(quantity)
@@ -530,16 +530,13 @@ onUnmounted(() => { window.removeEventListener('message', onPaymentMessage); if 
             <td class="purchase-price">{{ linePrice(item) }}<small v-if="purchasePrices && form.action === 'buy'">¥{{ (purchasePrices[item.price] / 100).toFixed(2) }} / {{ item.unit }} / 月</small></td>
           </tr>
         </tbody></table>
-        <label v-if="purchaseFeaturesReady && form.action !== 'expand'" class="purchase-coupon">优惠码<input v-model.trim="form.couponCode" placeholder="请输入优惠码" autocomplete="off" /></label>
+        <label v-if="purchaseFeaturesReady && form.action !== 'expand'" class="purchase-coupon"><span>优惠码</span><input v-model.trim="form.couponCode" placeholder="请输入优惠码" autocomplete="off" /></label>
         <div v-if="form.action !== 'expand'" class="purchase-subtotal"><strong>价格小计</strong><span>{{ quoteAmountCents === null ? '—' : `¥${(quoteAmountCents / 100).toFixed(2)}` }}</span></div>
         <div v-if="form.action !== 'expand'" class="purchase-duration">
-          <span>时长</span><div class="purchase-duration-content">
-            <div class="purchase-periods"><a-button-group type="outline">
+          <span>时长</span><div class="purchase-periods"><a-button-group type="outline">
               <a-button v-for="period in purchasePeriods.slice(0, 8)" :key="`${period.quantity}-${period.unit}`" :type="form.quantity === period.quantity && form.unit === period.unit ? 'primary' : 'outline'" @click="form.quantity = period.quantity; form.unit = period.unit">{{ period.quantity }}{{ periodUnits[period.unit] }}</a-button>
-            </a-button-group>
-            <a-dropdown trigger="click" @select="selectPurchasePeriod"><a-button :type="morePurchasePeriod ? 'primary' : 'secondary'">{{ morePurchasePeriod ? `${morePurchasePeriod.quantity}${periodUnits[morePurchasePeriod.unit]}` : '更多时长' }} ▾</a-button><template #content><a-doption v-for="period in purchasePeriods.slice(8)" :key="`${period.quantity}-${period.unit}`" :value="`${period.unit}:${period.quantity}`">{{ period.quantity }}{{ periodUnits[period.unit] }}</a-doption></template></a-dropdown></div>
-            <div class="purchase-custom"><label>自定义时长<input v-model.number="form.quantity" type="number" min="1" :max="periodLimits[form.unit]" /></label><label>单位<select v-model="form.unit"><option value="day">天</option><option value="month">月</option><option value="year">年</option></select></label></div>
-          </div>
+            </a-button-group></div>
+          <div class="purchase-period-more"><a-dropdown trigger="click" @select="selectPurchasePeriod"><a-button :type="morePurchasePeriod ? 'primary' : 'secondary'">{{ morePurchasePeriod ? `${morePurchasePeriod.quantity}${periodUnits[morePurchasePeriod.unit]}` : '更多时长' }} ▾</a-button><template #content><a-doption v-for="period in purchasePeriods.slice(8)" :key="`${period.quantity}-${period.unit}`" :value="`${period.unit}:${period.quantity}`">{{ period.quantity }}{{ periodUnits[period.unit] }}</a-doption></template></a-dropdown></div>
         </div>
         <div class="purchase-total"><span>总价</span><strong v-if="quoteAmountCents !== null">¥{{ (quoteAmountCents / 100).toFixed(2) }}</strong><span v-else>—</span></div>
         <p v-if="quoteAmountCents !== null && purchaseCombination && purchaseCombination.discountNew < 100" class="hint" role="status">已计入组合优惠：{{ purchaseCombination.discountNew }}%（{{ purchaseCombination.discountNew / 10 }} 折）</p>
@@ -777,16 +774,16 @@ input[type='checkbox'] { width: auto; min-height: 0; padding: 0; accent-color: r
 .purchase-price small { display: block; margin-top: 3px; color: var(--color-text-3, #86909c); font-size: 11px; }
 .purchase-subtotal { display: grid; grid-template-columns: 120px minmax(0, 1fr) 200px; align-items: center; margin-top: 20px; padding: 20px 16px; }
 .purchase-subtotal > span { grid-column: 3; }
-.purchase-duration, .purchase-total { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 20px; align-items: start; padding: 10px; }
+.purchase-duration, .purchase-total { display: grid; grid-template-columns: 120px minmax(0, 1fr) 200px; gap: 20px; align-items: start; padding: 10px 16px; }
 .purchase-duration > span, .purchase-total > span { line-height: 32px; }
+.purchase-total > :last-child { grid-column: 3; }
 .purchase-periods { display: flex; flex-wrap: wrap; align-items: center; gap: 20px; }
 .purchase-periods .arco-btn-group { display: flex; }
-.purchase-custom { display: flex; gap: 12px; margin-top: 16px; }
-.purchase-custom label:first-child { width: 180px; }
-.purchase-custom label:last-child { width: 100px; }
+.purchase-period-more { grid-column: 3; }
 .purchase-total { align-items: center; margin-top: 8px; }
 .purchase-total strong { color: rgb(var(--orange-6, 255, 125, 0)); font-size: 20px; font-weight: 400; }
-.purchase-coupon { display: block; max-width: 320px; margin: 12px 10px; }
+.purchase-coupon { display: flex; flex-direction: row; align-items: center; gap: 12px; max-width: 320px; margin: 12px 10px; }
+.purchase-coupon input { flex: 1; min-width: 0; }
 .purchase-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; margin-top: 40px; }
 .purchase-actions .arco-btn { width: 160px; }
 .payment-frame { display: block; width: 100%; height: min(660px, 65vh); border: 0; }
@@ -810,9 +807,10 @@ input[type='checkbox'] { width: auto; min-height: 0; padding: 0; accent-color: r
   .purchase-control .arco-input-number { width: 118px; }
   .purchase-subtotal { display: flex; justify-content: space-between; padding: 20px 0; }
   .purchase-duration, .purchase-total { grid-template-columns: 1fr; gap: 8px; padding: 10px 0; }
+  .purchase-total > :last-child { grid-column: 1; }
+  .purchase-period-more { grid-column: 1; }
   .purchase-periods { gap: 12px; }
   .purchase-periods .arco-btn-group .arco-btn, .purchase-periods > .arco-btn { min-height: 44px; }
-  .purchase-custom label:first-child { width: 150px; }
   .purchase-actions .arco-btn { min-height: 44px; }
   .purchase-coupon { max-width: none; margin-inline: 0; }
 }
