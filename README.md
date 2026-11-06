@@ -133,7 +133,8 @@ existing License. It obtains the product ID from W7's signed `prepare2` endpoint
 to `ingress.host`. Refreshed order tokens are written back to that User. The W7
 gateway checks payment status before `KubeStore` applies a Csm or DataDisk change.
 For local simulation, set `MOCK_PAY=true` (Helm: `payment.mockPay=true`). It
-creates a local order and immediately marks it paid; the chart defaults to false.
+creates a local order and immediately marks it paid; this is the chart default.
+Set `payment.mockPay=false` to use W7 payment.
 
 The UI can call `GET /csm-api/v1/auth/config` for the OIDC authorization URL,
 client ID and fixed redirect URI. After a PKCE code flow, it sends `code`,

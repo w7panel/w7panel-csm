@@ -41,7 +41,7 @@ ssh:
 terminal:
   allowedOrigin: ""
 payment:
-  mockPay: false
+  mockPay: true
   productID: ""
   callbackHost: ""
 
