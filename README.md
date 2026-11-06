@@ -127,11 +127,10 @@ duration, CPU, memory, storage, and bandwidth match, with separate new purchase
 and renewal percentages. Expansion and unmatched orders use unit prices. CSM
 calculates quotes on the server; an unset price blocks orders.
 
-Set `payment.credentialNamespace` to the namespace containing the existing
-`<account>.w7-config` Secrets (defaults to the CSM release namespace). CSM reads
-each account's `thirdparty_cd_token`, `cd_token_expire_time`, `cluster_id` and
-`userinfo`, plus the site AppID from the existing License. The W7 gateway checks
-payment status before `KubeStore` applies a Csm or DataDisk change.
+CSM reads each account's W7 credentials from the cluster-scoped User CRD under
+`spec.cloud`, plus `spec.cloudOpenid` and the site AppID from the existing
+License. Refreshed order tokens are written back to that User. The W7 gateway
+checks payment status before `KubeStore` applies a Csm or DataDisk change.
 For local simulation, set `MOCK_PAY=true` (Helm: `payment.mockPay=true`). It
 creates a local order and immediately marks it paid; the chart defaults to false.
 

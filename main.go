@@ -88,13 +88,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	credentialNamespace := os.Getenv("CSM_PAYMENT_CREDENTIAL_NAMESPACE")
 	if !mockPay {
-		if productID == "" || callbackHost == "" || credentialNamespace == "" {
-			return fmt.Errorf("CSM_PAYMENT_PRODUCT_ID, CSM_PAYMENT_CALLBACK_HOST and CSM_PAYMENT_CREDENTIAL_NAMESPACE are required")
-		}
-		if len(validation.IsDNS1123Label(credentialNamespace)) != 0 {
-			return fmt.Errorf("CSM_PAYMENT_CREDENTIAL_NAMESPACE must be a DNS label")
+		if productID == "" || callbackHost == "" {
+			return fmt.Errorf("CSM_PAYMENT_PRODUCT_ID and CSM_PAYMENT_CALLBACK_HOST are required")
 		}
 	}
 	terminalOrigin := os.Getenv("CSM_TERMINAL_ALLOWED_ORIGIN")
@@ -224,7 +220,7 @@ func run() error {
 	store := order.KubeStore{BaseURL: cfg.Host, Token: cfg.BearerToken, Client: kubeHTTP}
 	coupons := &order.KubeCoupons{Kube: kube, Namespace: pricingNamespace}
 	pricing := order.KubePricing{Kube: kube, Store: store, Coupons: coupons, Namespace: pricingNamespace, ProductID: productID}
-	var gateway order.Gateway = order.W7Gateway{NotifyURL: "https://" + callbackHost + httpapi.Prefix + "/order/notify", Credential: integration.AccountCredential(kube, resources, credentialNamespace), SaveToken: integration.AccountTokenSaver(kube, credentialNamespace), Quote: pricing.Quote}
+	var gateway order.Gateway = order.W7Gateway{NotifyURL: "https://" + callbackHost + httpapi.Prefix + "/order/notify", Credential: integration.AccountCredential(kube, resources), SaveToken: integration.AccountTokenSaver(resources), Quote: pricing.Quote}
 	if mockPay {
 		gateway = order.MockGateway{Quote: pricing.Quote}
 	}

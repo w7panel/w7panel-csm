@@ -22,36 +22,27 @@ import (
 )
 
 // AccountCredential reads the existing W7 account and site license credentials.
-func AccountCredential(kube kubernetes.Interface, resources dynamic.Interface, credentialNamespace string) func(context.Context, string) (order.W7Credential, error) {
+func AccountCredential(kube kubernetes.Interface, resources dynamic.Interface) func(context.Context, string) (order.W7Credential, error) {
 	return func(ctx context.Context, namespace string) (order.W7Credential, error) {
 		if !strings.HasPrefix(namespace, "csm-") || strings.TrimPrefix(namespace, "csm-") == "" {
 			return order.W7Credential{}, fmt.Errorf("invalid CSM account namespace")
 		}
 		account := strings.TrimPrefix(namespace, "csm-")
-		secret, err := kube.CoreV1().Secrets(credentialNamespace).Get(ctx, account+".w7-config", metav1.GetOptions{})
+		user, err := resources.Resource(userGVR).Get(ctx, account, metav1.GetOptions{})
 		if err != nil {
 			return order.W7Credential{}, err
 		}
-		get := func(key string) string { return string(secret.Data[key]) }
 		appID, err := siteAppID(ctx, kube, resources)
 		if err != nil {
 			return order.W7Credential{}, err
 		}
-		credential := order.W7Credential{Token: get("thirdparty_cd_token"), Account: account, AppID: appID, ClusterID: get("cluster_id")}
-		var user struct {
-			OpenID string `json:"open_id"`
-		}
-		if raw := secret.Data["userinfo"]; len(raw) > 0 {
-			if err := json.Unmarshal(raw, &user); err != nil {
-				return order.W7Credential{}, fmt.Errorf("invalid W7 account userinfo: %w", err)
-			}
-		}
-		credential.OpenID = user.OpenID
-		if raw := get("cd_token_expire_time"); raw != "" {
-			seconds, err := strconv.ParseInt(raw, 10, 64)
-			if err != nil {
-				return order.W7Credential{}, fmt.Errorf("invalid W7 token expiry: %w", err)
-			}
+		credential := order.W7Credential{Account: account, AppID: appID}
+		credential.Token, _, _ = unstructured.NestedString(user.Object, "spec", "cloud", "thirdpartyCDToken")
+		credential.ClusterID, _, _ = unstructured.NestedString(user.Object, "spec", "cloud", "clusterId")
+		credential.OpenID, _, _ = unstructured.NestedString(user.Object, "spec", "cloudOpenid")
+		if seconds, ok, err := unstructured.NestedInt64(user.Object, "spec", "cloud", "cdTokenExpireTime"); err != nil {
+			return order.W7Credential{}, fmt.Errorf("invalid W7 token expiry: %w", err)
+		} else if ok {
 			credential.ExpiresAt = time.Unix(seconds, 0)
 		}
 		if credential.AppID == "" || (credential.Token == "" && credential.OpenID == "") {
@@ -61,25 +52,31 @@ func AccountCredential(kube kubernetes.Interface, resources dynamic.Interface, c
 	}
 }
 
-// AccountTokenSaver persists refreshed W7 order credentials in the account Secret.
-func AccountTokenSaver(kube kubernetes.Interface, credentialNamespace string) func(context.Context, string, string, time.Time) error {
+// AccountTokenSaver persists refreshed W7 order credentials in the account User.
+func AccountTokenSaver(resources dynamic.Interface) func(context.Context, string, string, time.Time) error {
 	return func(ctx context.Context, namespace, token string, expiresAt time.Time) error {
 		if !strings.HasPrefix(namespace, "csm-") || strings.TrimPrefix(namespace, "csm-") == "" {
 			return fmt.Errorf("invalid CSM account namespace")
 		}
-		secretName := strings.TrimPrefix(namespace, "csm-") + ".w7-config"
-		secrets := kube.CoreV1().Secrets(credentialNamespace)
+		account := strings.TrimPrefix(namespace, "csm-")
 		return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-			secret, err := secrets.Get(ctx, secretName, metav1.GetOptions{})
+			user, err := resources.Resource(userGVR).Get(ctx, account, metav1.GetOptions{})
 			if err != nil {
 				return err
 			}
-			if secret.Data == nil {
-				secret.Data = map[string][]byte{}
+			cloud, ok, err := unstructured.NestedMap(user.Object, "spec", "cloud")
+			if err != nil {
+				return err
 			}
-			secret.Data["thirdparty_cd_token"] = []byte(token)
-			secret.Data["cd_token_expire_time"] = []byte(strconv.FormatInt(expiresAt.Unix(), 10))
-			_, err = secrets.Update(ctx, secret, metav1.UpdateOptions{})
+			if !ok {
+				cloud = map[string]any{}
+			}
+			cloud["thirdpartyCDToken"] = token
+			cloud["cdTokenExpireTime"] = expiresAt.Unix()
+			if err := unstructured.SetNestedMap(user.Object, cloud, "spec", "cloud"); err != nil {
+				return err
+			}
+			_, err = resources.Resource(userGVR).Update(ctx, user, metav1.UpdateOptions{})
 			return err
 		})
 	}
