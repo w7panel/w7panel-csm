@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 )
 
 // AccountCredential reads the existing W7 account and site license credentials.
@@ -57,6 +58,30 @@ func AccountCredential(kube kubernetes.Interface, resources dynamic.Interface, c
 			return order.W7Credential{}, fmt.Errorf("W7 account credential is incomplete")
 		}
 		return credential, nil
+	}
+}
+
+// AccountTokenSaver persists refreshed W7 order credentials in the account Secret.
+func AccountTokenSaver(kube kubernetes.Interface, credentialNamespace string) func(context.Context, string, string, time.Time) error {
+	return func(ctx context.Context, namespace, token string, expiresAt time.Time) error {
+		if !strings.HasPrefix(namespace, "csm-") || strings.TrimPrefix(namespace, "csm-") == "" {
+			return fmt.Errorf("invalid CSM account namespace")
+		}
+		secretName := strings.TrimPrefix(namespace, "csm-") + ".w7-config"
+		secrets := kube.CoreV1().Secrets(credentialNamespace)
+		return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			secret, err := secrets.Get(ctx, secretName, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+			if secret.Data == nil {
+				secret.Data = map[string][]byte{}
+			}
+			secret.Data["thirdparty_cd_token"] = []byte(token)
+			secret.Data["cd_token_expire_time"] = []byte(strconv.FormatInt(expiresAt.Unix(), 10))
+			_, err = secrets.Update(ctx, secret, metav1.UpdateOptions{})
+			return err
+		})
 	}
 }
 

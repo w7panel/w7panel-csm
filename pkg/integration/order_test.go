@@ -52,6 +52,22 @@ func TestAccountCredentialReadsUserLicense(t *testing.T) {
 	}
 }
 
+func TestAccountTokenSaverUpdatesAccountSecret(t *testing.T) {
+	account := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "alice.w7-config", Namespace: "accounts"}}
+	kube := kubefake.NewClientset(account)
+	expiresAt := time.Unix(1893456000, 0)
+	if err := AccountTokenSaver(kube, "accounts")(context.Background(), "csm-alice", "new-token", expiresAt); err != nil {
+		t.Fatal(err)
+	}
+	secret, err := kube.CoreV1().Secrets("accounts").Get(context.Background(), "alice.w7-config", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(secret.Data["thirdparty_cd_token"]) != "new-token" || string(secret.Data["cd_token_expire_time"]) != "1893456000" {
+		t.Fatalf("saved token data = %v", secret.Data)
+	}
+}
+
 func TestValidateQuoteTermsRejectsOverwrittenSize(t *testing.T) {
 	choice := order.Request{Kind: "csm", Action: "buy", Name: "host", CPU: 2, MemoryGi: 4, StorageGi: 40, BandwidthMbps: 5, Quantity: 1, Unit: "month"}
 	params := url.Values{"hour": {"720"}, "cpu": {"2"}, "memory": {"4"}, "storage": {"40"}, "bandwidth": {"5"}}

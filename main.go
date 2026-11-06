@@ -224,7 +224,7 @@ func run() error {
 	store := order.KubeStore{BaseURL: cfg.Host, Token: cfg.BearerToken, Client: kubeHTTP}
 	coupons := &order.KubeCoupons{Kube: kube, Namespace: pricingNamespace}
 	pricing := order.KubePricing{Kube: kube, Store: store, Coupons: coupons, Namespace: pricingNamespace, ProductID: productID}
-	var gateway order.Gateway = order.W7Gateway{NotifyURL: "https://" + callbackHost + httpapi.Prefix + "/order/notify", Credential: integration.AccountCredential(kube, resources, credentialNamespace), Quote: pricing.Quote}
+	var gateway order.Gateway = order.W7Gateway{NotifyURL: "https://" + callbackHost + httpapi.Prefix + "/order/notify", Credential: integration.AccountCredential(kube, resources, credentialNamespace), SaveToken: integration.AccountTokenSaver(kube, credentialNamespace), Quote: pricing.Quote}
 	if mockPay {
 		gateway = order.MockGateway{Quote: pricing.Quote}
 	}
