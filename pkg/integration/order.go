@@ -32,11 +32,11 @@ func AccountCredential(kube kubernetes.Interface, resources dynamic.Interface) f
 		if err != nil {
 			return order.W7Credential{}, err
 		}
-		appID, err := siteAppID(ctx, kube, resources)
+		appID, appSecret, err := siteCredential(ctx, kube, resources)
 		if err != nil {
 			return order.W7Credential{}, err
 		}
-		credential := order.W7Credential{Account: account, AppID: appID}
+		credential := order.W7Credential{Account: account, AppID: appID, AppSecret: appSecret}
 		credential.Token, _, _ = unstructured.NestedString(user.Object, "spec", "cloud", "thirdpartyCDToken")
 		credential.ClusterID, _, _ = unstructured.NestedString(user.Object, "spec", "cloud", "clusterId")
 		credential.OpenID, _, _ = unstructured.NestedString(user.Object, "spec", "cloudOpenid")
@@ -85,27 +85,29 @@ func AccountTokenSaver(resources dynamic.Interface) func(context.Context, string
 var licenseGVR = schema.GroupVersionResource{Group: "w7panel.w7.com", Version: "v1alpha1", Resource: "licenses"}
 var userGVR = schema.GroupVersionResource{Group: "w7panel.w7.com", Version: "v1alpha1", Resource: "users"}
 
-func siteAppID(ctx context.Context, kube kubernetes.Interface, resources dynamic.Interface) (string, error) {
+func siteCredential(ctx context.Context, kube kubernetes.Interface, resources dynamic.Interface) (string, string, error) {
 	if license, err := resources.Resource(licenseGVR).Get(ctx, "license", metav1.GetOptions{}); err == nil {
 		if appID, _, _ := unstructured.NestedString(license.Object, "spec", "appId"); appID != "" {
-			return appID, nil
+			appSecret, _, _ := unstructured.NestedString(license.Object, "spec", "appSecret")
+			return appID, appSecret, nil
 		}
 	}
 	if users, err := resources.Resource(userGVR).List(ctx, metav1.ListOptions{}); err == nil {
 		for i := range users.Items {
 			if appID, _, _ := unstructured.NestedString(users.Items[i].Object, "spec", "license", "appId"); appID != "" {
-				return appID, nil
+				appSecret, _, _ := unstructured.NestedString(users.Items[i].Object, "spec", "license", "appSecret")
+				return appID, appSecret, nil
 			}
 		}
 	}
 	license, err := kube.CoreV1().Secrets("kube-system").Get(ctx, "license", metav1.GetOptions{})
 	if err != nil {
-		return "", fmt.Errorf("W7 site license is unavailable: %w", err)
+		return "", "", fmt.Errorf("W7 site license is unavailable: %w", err)
 	}
 	if appID := string(license.Data["appId"]); appID != "" {
-		return appID, nil
+		return appID, string(license.Data["appSecret"]), nil
 	}
-	return "", fmt.Errorf("W7 site license has no appId")
+	return "", "", fmt.Errorf("W7 site license has no appId")
 }
 
 // RemoteQuote calls a trusted server-side pricing service; request bodies contain no price.

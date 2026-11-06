@@ -60,8 +60,7 @@ hosts on the original template.
 The sample manifest is in `config/samples/`.
 The deployed manager requires in-cluster Kubernetes credentials and Helm values for
 `oidc.discoveryURL`, `oidc.audience`, `oidc.clientID`, `oidc.redirectURI`,
-`ssh.publicHost`, `ssh.domainSuffix`, `ssh.jumpPort`, `payment.productID`,
-`payment.callbackHost`.
+`ssh.publicHost`, `ssh.domainSuffix`, `ssh.jumpPort`, and `ingress.host`.
 With `ssh.jumpEnabled=true`, one LoadBalancer Service exposes the CSM SSH gateway
 at `ssh.publicHost:ssh.jumpPort`. Add your public key once in the host detail page:
 
@@ -128,9 +127,11 @@ and renewal percentages. Expansion and unmatched orders use unit prices. CSM
 calculates quotes on the server; an unset price blocks orders.
 
 CSM reads each account's W7 credentials from the cluster-scoped User CRD under
-`spec.cloud`, plus `spec.cloudOpenid` and the site AppID from the existing
-License. Refreshed order tokens are written back to that User. The W7 gateway
-checks payment status before `KubeStore` applies a Csm or DataDisk change.
+`spec.cloud`, plus `spec.cloudOpenid` and the site AppID/AppSecret from the
+existing License. It obtains the product ID from W7's signed `prepare2` endpoint;
+`payment.productID` remains an optional override. `payment.callbackHost` defaults
+to `ingress.host`. Refreshed order tokens are written back to that User. The W7
+gateway checks payment status before `KubeStore` applies a Csm or DataDisk change.
 For local simulation, set `MOCK_PAY=true` (Helm: `payment.mockPay=true`). It
 creates a local order and immediately marks it paid; the chart defaults to false.
 

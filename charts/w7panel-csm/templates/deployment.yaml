@@ -69,7 +69,7 @@ spec:
             - name: MOCK_PAY
               value: {{ .Values.payment.mockPay | quote }}
             - name: CSM_PAYMENT_CALLBACK_HOST
-              value: {{ .Values.payment.callbackHost | quote }}
+              value: {{ default .Values.ingress.host .Values.payment.callbackHost | quote }}
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:

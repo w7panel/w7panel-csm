@@ -23,10 +23,10 @@ func TestAccountCredentialUsesMatchingAccountAndSiteLicense(t *testing.T) {
 			"thirdpartyCDToken": "alice-token", "cdTokenExpireTime": int64(1893456000), "clusterId": "cluster",
 		}},
 	}}
-	license := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "w7panel.w7.com/v1alpha1", "kind": "License", "metadata": map[string]any{"name": "license"}, "spec": map[string]any{"appId": "site-app"}}}
+	license := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "w7panel.w7.com/v1alpha1", "kind": "License", "metadata": map[string]any{"name": "license"}, "spec": map[string]any{"appId": "site-app", "appSecret": "site-secret"}}}
 	resources := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), account, license)
 	credential, err := AccountCredential(kube, resources)(context.Background(), "csm-alice")
-	if err != nil || credential.Account != "alice" || credential.Token != "alice-token" || credential.OpenID != "alice-openid" || credential.AppID != "site-app" || credential.ClusterID != "cluster" || !credential.ExpiresAt.Equal(time.Unix(1893456000, 0)) {
+	if err != nil || credential.Account != "alice" || credential.Token != "alice-token" || credential.OpenID != "alice-openid" || credential.AppID != "site-app" || credential.AppSecret != "site-secret" || credential.ClusterID != "cluster" || !credential.ExpiresAt.Equal(time.Unix(1893456000, 0)) {
 		t.Fatalf("credential = %+v, err = %v", credential, err)
 	}
 	if _, err := AccountCredential(kube, resources)(context.Background(), "csm-bob"); err == nil {
@@ -45,11 +45,11 @@ func TestAccountCredentialReadsUserLicense(t *testing.T) {
 	user := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "w7panel.w7.com/v1alpha1", "kind": "User",
 		"metadata": map[string]any{"name": "founder"},
-		"spec":     map[string]any{"license": map[string]any{"appId": "user-app"}},
+		"spec":     map[string]any{"license": map[string]any{"appId": "user-app", "appSecret": "user-secret"}},
 	}}
 	resources := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{userGVR: "UserList"}, account, user)
 	credential, err := AccountCredential(kubefake.NewClientset(), resources)(context.Background(), "csm-alice")
-	if err != nil || credential.AppID != "user-app" {
+	if err != nil || credential.AppID != "user-app" || credential.AppSecret != "user-secret" {
 		t.Fatalf("user license credential = %+v, err = %v", credential, err)
 	}
 }

@@ -89,8 +89,8 @@ func run() error {
 		return err
 	}
 	if !mockPay {
-		if productID == "" || callbackHost == "" {
-			return fmt.Errorf("CSM_PAYMENT_PRODUCT_ID and CSM_PAYMENT_CALLBACK_HOST are required")
+		if callbackHost == "" {
+			return fmt.Errorf("CSM_PAYMENT_CALLBACK_HOST is required")
 		}
 	}
 	terminalOrigin := os.Getenv("CSM_TERMINAL_ALLOWED_ORIGIN")

@@ -2,6 +2,9 @@ package order
 
 import (
 	"context"
+	"crypto/md5"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,8 +20,8 @@ import (
 const W7OrderURL = "https://console.w7.cc/api/thirdparty-cd/k8s-offline/order"
 
 type W7Credential struct {
-	Token, Account, AppID, ClusterID, OpenID string
-	ExpiresAt                                time.Time
+	Token, Account, AppID, AppSecret, ClusterID, OpenID string
+	ExpiresAt                                           time.Time
 }
 
 // W7Gateway uses tenant-scoped credentials and a server-side quote. The quote
@@ -89,8 +92,14 @@ func (g W7Gateway) Create(ctx context.Context, r Request) (Payment, error) {
 	if err != nil {
 		return Payment{}, err
 	}
-	if cents < 0 || productID == "" {
+	if cents < 0 {
 		return Payment{}, ErrInvalid
+	}
+	if productID == "" {
+		productID, err = g.prepareProduct(ctx, c)
+		if err != nil {
+			return Payment{}, err
+		}
 	}
 	if r.FounderFree {
 		cents = 0
@@ -149,6 +158,53 @@ func (g W7Gateway) Create(ctx context.Context, r Request) (Payment, error) {
 		return Payment{}, errors.New("W7 returned incomplete payment details")
 	}
 	return Payment{OrderSn: result.OrderSn, Ticket: result.Ticket, NeedPay: result.NeedPay, AmountCents: cents, Expected: expected}, nil
+}
+
+func (g W7Gateway) prepareProduct(ctx context.Context, credential W7Credential) (string, error) {
+	if credential.AppID == "" || credential.AppSecret == "" {
+		return "", errors.New("W7 site AppID or AppSecret is missing")
+	}
+	endpoint, err := url.Parse(g.endpoint())
+	if err != nil {
+		return "", err
+	}
+	endpoint.Path = "/api/thirdparty-cd/k8s-offline/sdk/prepare2"
+	endpoint.RawQuery = ""
+	nonce := make([]byte, 8)
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
+	form := url.Values{
+		"appid":     {credential.AppID},
+		"timestamp": {strconv.FormatInt(time.Now().Unix(), 10)},
+		"nonce":     {hex.EncodeToString(nonce)},
+	}
+	sign := md5.Sum([]byte(form.Encode() + credential.AppSecret))
+	form.Set("sign", hex.EncodeToString(sign[:]))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := g.client().Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("W7 prepare product returned HTTP %d", resp.StatusCode)
+	}
+	var result struct {
+		ProductID int64 `json:"productId"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
+		return "", err
+	}
+	if result.ProductID < 1 {
+		return "", errors.New("W7 prepare product returned no productId")
+	}
+	return strconv.FormatInt(result.ProductID, 10), nil
 }
 func (g W7Gateway) Lookup(ctx context.Context, r Record) (PaymentStatus, error) {
 	c, err := g.credentials(ctx, r.Namespace)

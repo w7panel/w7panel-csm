@@ -2,6 +2,8 @@ package order
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -228,6 +230,40 @@ func TestW7GatewayChecksRequestAndResponse(t *testing.T) {
 	}
 	if !strings.HasPrefix(g.endpoint(), "http") {
 		t.Fatal(g.endpoint())
+	}
+}
+
+func TestW7GatewayPreparesProductWhenNotConfigured(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/thirdparty-cd/k8s-offline/sdk/prepare2" {
+			if r.Method != http.MethodPost {
+				t.Errorf("prepare method = %s", r.Method)
+			}
+			_ = r.ParseForm()
+			sign := r.Form.Get("sign")
+			r.Form.Del("sign")
+			expected := md5.Sum([]byte(r.Form.Encode() + "site-secret"))
+			if r.Form.Get("appid") != "site-app" || sign != hex.EncodeToString(expected[:]) {
+				t.Errorf("invalid prepare signature: %v", r.Form)
+			}
+			_, _ = w.Write([]byte(`{"productId":42}`))
+			return
+		}
+		_ = r.ParseForm()
+		if r.Form.Get("productId") != "42" {
+			t.Errorf("order productId = %q", r.Form.Get("productId"))
+		}
+		_, _ = w.Write([]byte(`{"ipOrderSn":"SN-PREPARED","ticket":"ticket","needPay":true}`))
+	}))
+	defer server.Close()
+	gateway := W7Gateway{Endpoint: server.URL, NotifyURL: "https://csm.example/csm-api/v1/order/notify", Credential: func(context.Context, string) (W7Credential, error) {
+		return W7Credential{Token: "token", Account: "alice", AppID: "site-app", AppSecret: "site-secret"}, nil
+	}, Quote: func(context.Context, Request) (int64, string, url.Values, error) {
+		return 1200, "", url.Values{"hour": {"720"}, "cpu": {"2"}, "memory": {"4"}, "storage": {"40"}, "bandwidth": {"5"}}, nil
+	}}
+	req := Request{Kind: "csm", Action: "buy", Namespace: "csm-alice", Name: "host", CPU: 2, MemoryGi: 4, StorageGi: 40, BandwidthMbps: 5, Quantity: 1, Unit: "month"}
+	if payment, err := gateway.Create(t.Context(), req); err != nil || payment.OrderSn != "SN-PREPARED" {
+		t.Fatalf("payment = %+v, err = %v", payment, err)
 	}
 }
 
